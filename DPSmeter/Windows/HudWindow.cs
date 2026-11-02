@@ -27,6 +27,9 @@ public sealed class HudWindow : Window, IDisposable
     private const uint JobIconBase = 62000;
     private const float TitleScale = 1.2f;
 
+    // Hauteur de l'icône de job et de la tête de mort dans une ligne : la même pour les deux.
+    private const float IconHeightInRow = 0.70f;
+
     private readonly Plugin plugin;
     private Configuration Cfg => plugin.Configuration;
 
@@ -281,8 +284,9 @@ public sealed class HudWindow : Window, IDisposable
         var pad = 4f * scale;
         var nameX = min.X + pad;
 
-        if (Cfg.ShowJobIcons && DrawJobIcon(row.JobId, new Vector2(nameX, min.Y + (height - lineH) / 2f), lineH))
-            nameX += lineH + pad * 0.75f;
+        var iconSize = MathF.Round(height * IconHeightInRow);
+        if (Cfg.ShowJobIcons && DrawJobIcon(row.JobId, new Vector2(nameX, MathF.Round(min.Y + (height - iconSize) / 2f)), iconSize))
+            nameX += iconSize + pad * 0.75f;
 
         // Valeurs à droite, nom à gauche (coupé s'il déborde).
         var white = new Vector4(1f, 1f, 1f, 1f);
@@ -292,7 +296,7 @@ public sealed class HudWindow : Window, IDisposable
 
         var nameEnd = max.X - pad * 2f - rightW;
         if (Cfg.ShowDeaths && plugin.IsDeadNow(row))
-            nameEnd = DrawDeathIcon(nameEnd, min.Y, height, pad);
+            nameEnd = DrawDeathIcon(nameEnd, min.Y, height, iconSize, pad);
 
         var name = plugin.DisplayName(row);
         drawList.PushClipRect(new Vector2(nameX, min.Y), new Vector2(nameEnd, max.Y), true);
@@ -307,10 +311,9 @@ public sealed class HudWindow : Window, IDisposable
     /// Tête de mort à gauche des valeurs, tant que le joueur est mort. Sa taille est calculée d'après le
     /// dessin réel de l'icône : elle reste centrée dans la ligne sans en dépasser. Renvoie la nouvelle limite du nom.
     /// </summary>
-    private unsafe float DrawDeathIcon(float right, float rowTop, float rowHeight, float pad)
+    private unsafe float DrawDeathIcon(float right, float rowTop, float rowHeight, float iconSize, float pad)
     {
         const char Skull = (char)FontAwesomeIcon.Skull;
-        const float HeightInRow = 0.70f;
 
         var textScale = Math.Clamp(Cfg.HudScale, 0.6f, 2f);
         var icon = Skull.ToString();
@@ -323,7 +326,7 @@ public sealed class HudWindow : Window, IDisposable
             if (glyph != null && glyph->Y1 > glyph->Y0 && font.FontSize > 0f)
             {
                 // Taille pour que l'icône occupe la hauteur voulue, puis position de son haut réel.
-                var drawnScale = rowHeight * HeightInRow / (glyph->Y1 - glyph->Y0);
+                var drawnScale = iconSize / (glyph->Y1 - glyph->Y0);
                 ImGui.SetWindowFontScale(textScale * drawnScale / (ImGui.GetFontSize() / font.FontSize));
                 var scale = ImGui.GetFontSize() / font.FontSize;
                 var top = rowTop + (rowHeight - (glyph->Y1 - glyph->Y0) * scale) / 2f - glyph->Y0 * scale;
