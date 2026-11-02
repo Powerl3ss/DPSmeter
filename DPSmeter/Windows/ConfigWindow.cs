@@ -251,7 +251,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
             Pill(plugin.LocalName, Success, dot: true, centerInFrame: true);
         else
             Pill("Hors ligne", TextDim, dot: true, centerInFrame: true);
-        var pillRight = ImGui.GetItemRectMax().X;
 
         var buttonY = (headerH - FrameH) / 2f;
         ImGui.SetCursorPos(new Vector2(size.X - pad - FrameH, buttonY));
@@ -268,10 +267,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
                        Cfg.HudVisible ? "Masquer le HUD" : "Afficher le HUD"))
             plugin.ToggleHud();
 
-        // Ta part des dégâts du groupe, entre ton nom et le bouton du HUD.
-        var hudButtonX = ImGui.GetWindowPos().X + size.X - pad - FrameH * 3 - 12f * S;
-        DrawHeaderShare(pillRight + 20f * S, hudButtonX - 20f * S, headerH);
-
         // Double-clic sur l'en-tête (hors boutons) : replie ou déplie la fenêtre.
         var origin = ImGui.GetWindowPos();
         var mouse = ImGui.GetMousePos();
@@ -280,20 +275,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
         if (inHeader && ImGui.IsWindowHovered() && !ImGui.IsAnyItemHovered() &&
             ImGui.IsMouseDoubleClicked(ImGuiMouseButton.Left))
             ToggleWindowCollapsed();
-    }
-
-    private readonly ProgressBar headerShare = new();
-
-    private void DrawHeaderShare(float left, float right, float headerH)
-    {
-        var width = right - left;
-        if (width < 60f * S || plugin.View?.Local is not { } local)
-            return;
-
-        var height = MathF.Round(8f * S);
-        ImGui.SetCursorScreenPos(new Vector2(left, ImGui.GetWindowPos().Y + (headerH - height) / 2f));
-        headerShare.Draw(local.Share, new Vector2(width, height), Accent, S,
-                         $"Ta part des dégâts : {Formatting.Percent(local.Share)}");
     }
 
     private void DrawSidebar(float headerH, float sidebarW)

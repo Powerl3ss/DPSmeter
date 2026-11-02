@@ -73,7 +73,6 @@ DPSmeter/
 ├── images/                logo
 └── Windows/
     ├── HudWindow.cs       le HUD affiché en jeu
-    ├── ProgressBar.cs     barre animée (en-tête des réglages)
     └── ConfigWindow*.cs   les réglages (même base que DailyToDo)
 Tests/DPSmeter.Tests/      tests de la logique : dotnet run depuis ce dossier
 ```
