@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
+using Dalamud.Game.DutyState;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -28,12 +29,16 @@ public sealed class Plugin : IDalamudPlugin
     [PluginService] internal static IDataManager DataManager { get; private set; } = null!;
     [PluginService] internal static IGameInteropProvider GameInterop { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
+    [PluginService] internal static IDutyState DutyState { get; private set; } = null!;
     [PluginService] internal static IPluginLog Log { get; private set; } = null!;
 
     private const string CommandName = "/dps";
     private const string LongCommandName = "/dpsmeter";
     private const string ChatPrefix = "[DPSmeter] ";
     private const string OpenWorldCategory = "Monde ouvert";
+
+    // Délai pendant lequel une annonce du jeu (victoire, équipe vaincue) peut encore corriger un combat terminé.
+    private const double OutcomeGraceSeconds = 60;
 
     // L'affichage est recalculé quatre fois par seconde : lisible, et sans coût à chaque image.
     private static readonly TimeSpan ViewRefresh = TimeSpan.FromMilliseconds(250);
@@ -52,6 +57,7 @@ public sealed class Plugin : IDalamudPlugin
     private DateTime nextViewRefresh = DateTime.MinValue;
     private DateTime lastCombatUtc = DateTime.MinValue;
     private EncounterView? view;
+    private (Encounter Encounter, EncounterRecord Record)? lastSaved;
 
     /// <summary>Aperçu du HUD avec de faux chiffres (réglages), pour le placer sans se battre.</summary>
     public bool PreviewMode { get; set; }
@@ -104,6 +110,8 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenMainUi += ToggleHud;
         ClientState.TerritoryChanged += OnTerritoryChanged;
         ClientState.Logout += OnLogout;
+        DutyState.DutyCompleted += OnDutyCompleted;
+        DutyState.DutyWiped += OnDutyWiped;
         Framework.Update += OnFrameworkUpdate;
 
         if (Parser.HookError != null)
@@ -115,6 +123,8 @@ public sealed class Plugin : IDalamudPlugin
         Framework.Update -= OnFrameworkUpdate;
         ClientState.TerritoryChanged -= OnTerritoryChanged;
         ClientState.Logout -= OnLogout;
+        DutyState.DutyCompleted -= OnDutyCompleted;
+        DutyState.DutyWiped -= OnDutyWiped;
 
         // Un combat en cours à l'arrêt du plugin est enregistré comme les autres.
         Tracker.EndCurrent(DateTime.UtcNow);
@@ -174,6 +184,11 @@ public sealed class Plugin : IDalamudPlugin
         if (inCombat || Tracker.IsActive)
             lastCombatUtc = now;
 
+        // Seulement en combat : après un wipe, le boss récupère tous ses PV, ce qui fausserait les PV restants.
+        if (inCombat)
+            Parser.PollMainTarget();
+
+        Tracker.RecentWindowSeconds = Configuration.RecentWindowSeconds;
         Tracker.Update(now, inCombat, Math.Max(1, Configuration.EndDelaySeconds));
         view = Tracker.BuildView(Tracker.Displayed, now);
     }
@@ -185,6 +200,28 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     private void OnLogout(int type, int code) => Tracker.EndCurrent(DateTime.UtcNow);
+
+    private void OnDutyCompleted(IDutyStateEventArgs args) => ApplyDutyOutcome(Outcome.Victory);
+
+    private void OnDutyWiped(IDutyStateEventArgs args) => ApplyDutyOutcome(Outcome.Failure);
+
+    /// <summary>L'instance annonce son issue : sur le combat en cours, ou sur celui qui vient de se terminer.</summary>
+    private void ApplyDutyOutcome(Outcome outcome)
+    {
+        if (Tracker.MarkOutcome(outcome))
+            return;
+
+        var marked = Tracker.MarkLastEnded(outcome, DateTime.UtcNow, OutcomeGraceSeconds);
+        if (marked == null || lastSaved is not { } saved || !ReferenceEquals(saved.Encounter, marked))
+            return;
+
+        var updated = saved.Record with
+        {
+            View = saved.Record.View with { Outcome = marked.Outcome, RemainingHp = marked.RemainingHp },
+        };
+        lastSaved = (marked, updated);
+        Store.Add(updated);
+    }
 
     /// <summary>En instance, le nom et le type viennent de la mission. Sinon, c'est le lieu en monde ouvert.</summary>
     private void UpdateZoneName(uint territory)
@@ -211,7 +248,14 @@ public sealed class Plugin : IDalamudPlugin
 
         var ended = EncounterView.From(encounter, DateTime.UtcNow);
         if (Configuration.SaveEncounters && ended.DurationSeconds >= Configuration.MinSaveSeconds)
-            Store.Add(EncounterRecord.From(encounter, ZoneCategory, ZoneName, LocalName, DateTime.UtcNow));
+        {
+            var record = EncounterRecord.From(encounter, ZoneCategory, ZoneName, LocalName, DateTime.UtcNow);
+            if (Configuration.ChatRecords && Store.IsLoaded && PersonalBests.BeatsPrevious(record, Store.All()))
+                Print($"Nouveau record sur {record.View.Title} : {Formatting.Full(record.View.Local!.Dps)} DPS ({JobAbbreviation(record.View.Local!.JobId)}) !");
+
+            Store.Add(record);
+            lastSaved = (encounter, record);
+        }
 
         if (!Configuration.ChatSummary)
             return;
@@ -253,7 +297,8 @@ public sealed class Plugin : IDalamudPlugin
 
     public string DiagnosticLine() =>
         $"Écoute {(Parser.HooksActive ? "active" : "inactive")}  |  actions lues : {Parser.ActionPackets}  |  " +
-        $"coups : {Parser.DamageEffects}  |  ticks de DoT : {Parser.DotTicks}  |  DoT sans auteur : {Formatting.Full(Parser.UnattributedDotDamage)}";
+        $"coups : {Parser.DamageEffects}  |  ticks de DoT : {Parser.DotTicks}  |  DoT sans auteur : {Formatting.Full(Parser.UnattributedDotDamage)}  |  " +
+        $"soins : {Parser.HealEffects}  |  ticks de HoT : {Parser.HotTicks}  |  morts vues : {Parser.Deaths}";
 
     // ------------------------------------------------------------ Fenêtres
 

@@ -26,16 +26,22 @@ public sealed unsafe class CombatParser : IDisposable
     private const uint InvalidId = 0xE0000000;
 
     // Catégories d'ActorControl pour les ticks (valeurs du client global depuis le patch 7.1).
+    private const uint CategoryDeath = 0x6;
+    private const uint CategoryHot = 0x604;
     private const uint CategoryDot = 0x605;
 
     // Types d'effets d'une action.
     private const byte EffectDamage = 3;
+    private const byte EffectHeal = 4;
     private const byte EffectBlockedDamage = 5;
     private const byte EffectParriedDamage = 6;
 
     // Param0 d'un effet de dégâts.
     private const byte FlagCrit = 0x20;
     private const byte FlagDirectHit = 0x40;
+
+    // Param1 d'un effet de soin.
+    private const byte FlagHealCrit = 0x20;
 
     // Param4 d'un effet de dégâts.
     private const byte FlagFromTarget = 0x20;  // renvoyé par la cible (riposte d'un tank...)
@@ -71,6 +77,9 @@ public sealed unsafe class CombatParser : IDisposable
     public long ActionPackets { get; private set; }
     public long DamageEffects { get; private set; }
     public long DotTicks { get; private set; }
+    public long HealEffects { get; private set; }
+    public long HotTicks { get; private set; }
+    public long Deaths { get; private set; }
     public long UnattributedDotDamage { get; private set; }
     public DateTime? LastPacketUtc { get; private set; }
 
@@ -152,7 +161,8 @@ public sealed unsafe class CombatParser : IDisposable
             for (var j = 0; j < 8; j++)
             {
                 ref var effect = ref effects[i].Effects[j];
-                if (effect.Type is not (EffectDamage or EffectBlockedDamage or EffectParriedDamage))
+                var isDamage = effect.Type is EffectDamage or EffectBlockedDamage or EffectParriedDamage;
+                if (!isDamage && effect.Type != EffectHeal)
                     continue;
 
                 long amount = effect.Value;
@@ -161,31 +171,76 @@ public sealed unsafe class CombatParser : IDisposable
                 if (amount <= 0)
                     continue;
 
-                DamageEffects++;
-
-                // Riposte : c'est la cible qui inflige des dégâts au lanceur.
-                var fromTarget = (effect.Param4 & FlagFromTarget) != 0;
-                var dealerId = fromTarget ? targetId : casterId;
                 var recipientId = (effect.Param4 & FlagAtSource) != 0 ? casterId : targetId;
-                if (dealerId == recipientId)
-                    continue;
 
-                var recipient = Plugin.ObjectTable.SearchByEntityId(recipientId);
-                if (!IsEnemy(recipient) || !TryResolveSource(dealerId, out var source))
-                    continue;
-
-                if (isLimitBreak && plugin.Configuration.SeparateLimitBreak)
-                    source = new Source(JobColors.LimitBreakId, "Transcendance", JobColors.LimitBreakId, false);
-
-                var hit = new Hit(source.Id, source.Name, source.JobId, source.IsLocal,
-                                  recipient?.Name.TextValue ?? string.Empty,
-                                  fromTarget ? "Riposte" : actionName,
-                                  amount,
-                                  (effect.Param0 & FlagCrit) != 0,
-                                  (effect.Param0 & FlagDirectHit) != 0);
-                tracker.Record(hit, DateTime.UtcNow, plugin.ZoneName);
+                if (isDamage)
+                {
+                    var fromTarget = (effect.Param4 & FlagFromTarget) != 0;
+                    ReadDamage(fromTarget ? targetId : casterId, recipientId, amount, fromTarget ? "Riposte" : actionName, isLimitBreak,
+                               (effect.Param0 & FlagCrit) != 0, (effect.Param0 & FlagDirectHit) != 0);
+                }
+                else
+                {
+                    ReadHeal(casterId, recipientId, amount, actionName, (effect.Param1 & FlagHealCrit) != 0);
+                }
             }
         }
+    }
+
+    private void ReadDamage(uint dealerId, uint recipientId, long amount, string actionName, bool isLimitBreak, bool isCrit, bool isDirectHit)
+    {
+        DamageEffects++;
+
+        // Dégâts que le joueur s'inflige à lui-même : ni infligés à un ennemi, ni causés par lui.
+        if (dealerId == recipientId)
+            return;
+
+        var recipient = Plugin.ObjectTable.SearchByEntityId(recipientId);
+
+        // Un membre du tableau touché : dégâts subis (en JcJ, il peut aussi être une cible valable ci-dessous).
+        if (TryResolveMember(recipient, out var member))
+        {
+            tracker.RecordDamageTaken(new Hit(member.Id, member.Name, member.JobId, member.IsLocal,
+                                              member.Name, actionName, amount));
+        }
+
+        if (!IsEnemy(recipient) || !TryResolveSource(dealerId, out var source))
+            return;
+
+        if (isLimitBreak && plugin.Configuration.SeparateLimitBreak)
+            source = new Source(JobColors.LimitBreakId, "Transcendance", JobColors.LimitBreakId, false);
+
+        var hit = new Hit(source.Id, source.Name, source.JobId, source.IsLocal,
+                          recipient?.Name.TextValue ?? string.Empty,
+                          actionName, amount, isCrit, isDirectHit,
+                          TargetId: recipientId, TargetHp: HpOf(recipient));
+        tracker.Record(hit, DateTime.UtcNow, plugin.ZoneName);
+    }
+
+    private void ReadHeal(uint healerId, uint recipientId, long amount, string actionName, bool isCrit)
+    {
+        HealEffects++;
+
+        // Un soin compte quand il touche un allié : pas quand un ennemi se soigne.
+        if (!IsFriendly(Plugin.ObjectTable.SearchByEntityId(recipientId)) || !TryResolveSource(healerId, out var source))
+            return;
+
+        tracker.RecordHealing(new Hit(source.Id, source.Name, source.JobId, source.IsLocal,
+                                      string.Empty, actionName, amount, isCrit));
+    }
+
+    private static float HpOf(IGameObject? target) =>
+        target is IBattleChara { MaxHp: > 0 } battle ? battle.CurrentHp / (float)battle.MaxHp : -1f;
+
+    /// <summary>Relit les PV de la cible principale : les paquets arrivent un peu avant que les dégâts soient appliqués.</summary>
+    public void PollMainTarget()
+    {
+        var id = tracker.MainTargetId;
+        if (id == 0)
+            return;
+
+        if (Plugin.ObjectTable.SearchByEntityId(id) is IBattleChara { MaxHp: > 0 } target)
+            tracker.UpdateTargetHp(id, target.IsDead ? 0f : target.CurrentHp / (float)target.MaxHp);
     }
 
     private (string Name, bool IsLimitBreak) ReadAction(ActionEffectHandler.Header* header)
@@ -227,13 +282,24 @@ public sealed unsafe class CombatParser : IDisposable
     {
         actorControlHook!.Original(entityId, category, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, targetId, isRecorded);
 
-        if (category != CategoryDot)
+        if (category is not (CategoryDot or CategoryHot or CategoryDeath))
             return;
 
         try
         {
-            // arg1 : effet (0 si le tick n'en désigne pas), arg2 : montant, arg3 : source indiquée par le paquet.
-            ReadDotTick(entityId, arg1, arg2, arg3);
+            // Ticks. arg1 : effet (0 si le tick n'en désigne pas), arg2 : montant, arg3 : source indiquée par le paquet.
+            switch (category)
+            {
+                case CategoryDot:
+                    ReadDotTick(entityId, arg1, arg2, arg3);
+                    break;
+                case CategoryHot:
+                    ReadHotTick(entityId, arg1, arg2, arg3);
+                    break;
+                case CategoryDeath:
+                    ReadDeath(entityId);
+                    break;
+            }
         }
         catch (Exception ex)
         {
@@ -250,6 +316,14 @@ public sealed unsafe class CombatParser : IDisposable
             return;
 
         var target = Plugin.ObjectTable.SearchByEntityId(targetId);
+
+        // DoT sur un membre du tableau : dégâts subis, quel que soit celui qui l'a posé.
+        if (TryResolveMember(target, out var member))
+        {
+            tracker.RecordDamageTaken(new Hit(member.Id, member.Name, member.JobId, member.IsLocal,
+                                              member.Name, StatusName(statusId, "DoT"), amount));
+        }
+
         if (!IsEnemy(target))
             return;
 
@@ -268,9 +342,51 @@ public sealed unsafe class CombatParser : IDisposable
 
             var hit = new Hit(source.Id, source.Name, source.JobId, source.IsLocal,
                               target?.Name.TextValue ?? string.Empty,
-                              StatusName(share.StatusId != 0 ? share.StatusId : statusId),
-                              share.Amount, IsDot: true, IsEstimated: estimated);
+                              StatusName(share.StatusId != 0 ? share.StatusId : statusId, "DoT"),
+                              share.Amount, IsDot: true, IsEstimated: estimated,
+                              TargetId: targetId, TargetHp: HpOf(target));
             tracker.Record(hit, DateTime.UtcNow, plugin.ZoneName);
+        }
+    }
+
+    /// <summary>Tick de soin : son auteur est celui qui a posé l'effet sur la cible.</summary>
+    private void ReadHotTick(uint targetId, uint statusId, uint amount, uint packetSource)
+    {
+        HotTicks++;
+        LastPacketUtc = DateTime.UtcNow;
+
+        if (amount == 0 || !tracker.IsActive)
+            return;
+
+        var target = Plugin.ObjectTable.SearchByEntityId(targetId);
+        if (!IsFriendly(target))
+            return;
+
+        dotCandidates.Clear();
+        if (statusId != 0)
+            AddStatusesOn(target as IBattleChara, s => s == statusId, weighted: false);
+        if (dotCandidates.Count == 0 && IsValidId(packetSource))
+            dotCandidates.Add(new DotShare(packetSource, statusId, 1f));
+
+        foreach (var share in DotTable.Split(amount, dotCandidates))
+        {
+            if (share.Amount == 0 || !TryResolveSource(share.SourceId, out var source))
+                continue;
+
+            tracker.RecordHealing(new Hit(source.Id, source.Name, source.JobId, source.IsLocal,
+                                          string.Empty, StatusName(statusId, "HoT"), share.Amount));
+        }
+    }
+
+    private void ReadDeath(uint entityId)
+    {
+        Deaths++;
+        tracker.RecordTargetDeath(entityId);
+
+        if (TryResolveMember(Plugin.ObjectTable.SearchByEntityId(entityId), out var member))
+        {
+            tracker.RecordDeath(new Hit(member.Id, member.Name, member.JobId, member.IsLocal, string.Empty, string.Empty, 0),
+                                DateTime.UtcNow);
         }
     }
 
@@ -370,16 +486,16 @@ public sealed unsafe class CombatParser : IDisposable
         lastDotSources[(targetId, statusId)] = (dotCandidates.ToArray(), DateTime.UtcNow);
     }
 
-    private string StatusName(uint statusId)
+    private string StatusName(uint statusId, string kind)
     {
         if (statusId == 0)
-            return "DoT";
+            return kind;
 
         if (statusCache.TryGetValue(statusId, out var known))
             return known;
 
         var name = Plugin.DataManager.GetExcelSheet<LuminaStatus>().GetRowOrDefault(statusId)?.Name.ToString();
-        var label = string.IsNullOrEmpty(name) ? "DoT" : $"{name} (DoT)";
+        var label = string.IsNullOrEmpty(name) ? kind : $"{name} ({kind})";
         statusCache[statusId] = label;
         return label;
     }
@@ -438,6 +554,32 @@ public sealed unsafe class CombatParser : IDisposable
         source = FromPlayer(owner);
         return true;
     }
+
+    /// <summary>Un joueur ou un PNJ allié figurant au tableau. Contrairement aux sources, pas de familier : ils n'ont pas de ligne pour leurs dégâts subis ou leur mort.</summary>
+    private bool TryResolveMember(IGameObject? actor, out Source member)
+    {
+        member = default;
+        switch (actor)
+        {
+            case IPlayerCharacter player when IsInScope(player.EntityId, plugin.Configuration.Scope):
+                member = FromPlayer(player);
+                return true;
+
+            case IBattleNpc { BattleNpcKind: BattleNpcSubKind.NpcPartyMember } npc when plugin.Configuration.Scope != MeterScope.Self:
+                member = new Source(npc.EntityId, npc.Name.TextValue, npc.ClassJob.RowId, false);
+                return true;
+
+            default:
+                return false;
+        }
+    }
+
+    private static bool IsFriendly(IGameObject? actor) => actor switch
+    {
+        IPlayerCharacter => !Plugin.ClientState.IsPvP || IsInScope(actor.EntityId, MeterScope.Alliance),
+        IBattleNpc { BattleNpcKind: BattleNpcSubKind.Pet or BattleNpcSubKind.Buddy or BattleNpcSubKind.NpcPartyMember } => true,
+        _ => false,
+    };
 
     private static Source FromPlayer(IPlayerCharacter player) =>
         new(player.EntityId, player.Name.TextValue, player.ClassJob.RowId, player.EntityId == Plugin.ObjectTable.LocalPlayer?.EntityId);

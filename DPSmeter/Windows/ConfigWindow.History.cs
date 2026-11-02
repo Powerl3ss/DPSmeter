@@ -18,12 +18,18 @@ public sealed partial class ConfigWindow
     private string filterCategory = string.Empty;
     private string filterPlace = string.Empty;
     private string filterCharacter = string.Empty;
+    private string filterJob = string.Empty;
+    private string filterOutcome = string.Empty;
+    private string? scrollToRecord;
     private EncounterSort historySort = EncounterSort.Newest;
 
     private List<EncounterRecord> historyList = new();
     private List<(string Value, int Count)> categoryOptions = new();
     private List<(string Value, int Count)> placeOptions = new();
     private List<(string Value, int Count)> characterOptions = new();
+    private List<(string Value, int Count)> jobOptions = new();
+    private List<(string Value, int Count)> outcomeOptions = new();
+    private readonly Dictionary<string, uint> jobIds = new();
     private int historyVersion = -1;
     private bool historyDirty = true;
     private int historyShown = HistoryPageSize;
@@ -35,6 +41,7 @@ public sealed partial class ConfigWindow
     {
         var store = plugin.Store;
         RefreshHistoryList();
+        RefreshBests();
 
         Hero("Historique", "Tes combats enregistrés, conservés d'une session à l'autre.",
              store.Count > 0 ? $"{store.Count} combat(s)" : null);
@@ -94,7 +101,7 @@ public sealed partial class ConfigWindow
             if (record.Id == expandedRecord)
             {
                 ImGui.Dummy(new Vector2(0, 2f * S));
-                DrawCombatantTable(record.View);
+                DrawEncounterDetails(record.View);
             }
             ImGui.Dummy(new Vector2(0, 2f * S));
         }
@@ -124,18 +131,35 @@ public sealed partial class ConfigWindow
         categoryOptions = EncounterQuery.Options(all, r => r.Category);
         characterOptions = EncounterQuery.Options(all, r => r.CharacterName);
 
+        jobIds.Clear();
+        foreach (var record in all)
+        {
+            if (record.View.Local is { JobId: > 0 } local)
+                jobIds[plugin.JobAbbreviation(local.JobId)] = local.JobId;
+        }
+        jobOptions = EncounterQuery.Options(all, r => r.View.Local is { JobId: > 0 } local ? plugin.JobAbbreviation(local.JobId) : string.Empty);
+        outcomeOptions = EncounterQuery.Options(all, r => Formatting.OutcomeLabel(r.View.Outcome));
+
         // Un filtre qui ne correspond plus à rien (derniers combats supprimés) revient à « tous ».
         if (!categoryOptions.Any(o => o.Value == filterCategory))
             filterCategory = string.Empty;
         if (!characterOptions.Any(o => o.Value == filterCharacter))
             filterCharacter = string.Empty;
+        if (!jobOptions.Any(o => o.Value == filterJob))
+            filterJob = string.Empty;
+        if (!outcomeOptions.Any(o => o.Value == filterOutcome))
+            filterOutcome = string.Empty;
 
         // Les lieux proposés dépendent du type choisi.
         placeOptions = EncounterQuery.Options(all.Where(r => filterCategory.Length == 0 || r.Category == filterCategory), r => r.Place);
         if (!placeOptions.Any(o => o.Value == filterPlace))
             filterPlace = string.Empty;
 
-        historyList = EncounterQuery.Apply(all, filterCategory, filterPlace, filterCharacter, historySort);
+        var filter = new EncounterFilter(
+            filterCategory, filterPlace, filterCharacter,
+            jobIds.GetValueOrDefault(filterJob),
+            Enum.GetValues<Outcome>().Where(o => o != Outcome.Unknown && Formatting.OutcomeLabel(o) == filterOutcome).Select(o => (Outcome?)o).FirstOrDefault());
+        historyList = EncounterQuery.Apply(all, filter, historySort);
 
         // La sélection et le détail ouvert ne survivent pas à la disparition de leur combat.
         var ids = all.Select(r => r.Id).ToHashSet();
@@ -148,18 +172,22 @@ public sealed partial class ConfigWindow
     {
         Card(() =>
         {
-            var showCharacters = characterOptions.Count > 1;
+            const int Columns = 3;
             var gap = 12f * S;
-            var columns = showCharacters ? 4 : 3;
-            var width = (cardInner - gap * (columns - 1)) / columns;
+            var width = (cardInner - gap * (Columns - 1)) / Columns;
+            var rowHeight = ImGui.GetTextLineHeightWithSpacing() + FrameH + gap;
 
             // Colonnes placées à la main : ImGui.SameLine décalerait vers le bas le texte de chaque
             // colonne suivante, pour l'aligner sur le texte de la liste déroulante d'à côté.
             var start = ImGui.GetCursorPos();
-            var column = 0;
-            void NextColumn() => ImGui.SetCursorPos(new Vector2(start.X + column++ * (width + gap), start.Y));
+            var cell = 0;
+            void NextCell()
+            {
+                ImGui.SetCursorPos(new Vector2(start.X + cell % Columns * (width + gap), start.Y + (float)(cell / Columns) * rowHeight));
+                cell++;
+            }
 
-            NextColumn();
+            NextCell();
             if (FilterCombo("Type", "##filterType", "Tous les types", filterCategory, categoryOptions, width, out var category))
             {
                 filterCategory = category;
@@ -167,16 +195,30 @@ public sealed partial class ConfigWindow
                 OnFiltersChanged();
             }
 
-            NextColumn();
+            NextCell();
             if (FilterCombo("Lieu", "##filterPlace", "Tous les lieux", filterPlace, placeOptions, width, out var place))
             {
                 filterPlace = place;
                 OnFiltersChanged();
             }
 
-            if (showCharacters)
+            NextCell();
+            if (FilterCombo("Job", "##filterJob", "Tous les jobs", filterJob, jobOptions, width, out var job))
             {
-                NextColumn();
+                filterJob = job;
+                OnFiltersChanged();
+            }
+
+            NextCell();
+            if (FilterCombo("Issue", "##filterOutcome", "Toutes", filterOutcome, outcomeOptions, width, out var outcome))
+            {
+                filterOutcome = outcome;
+                OnFiltersChanged();
+            }
+
+            if (characterOptions.Count > 1)
+            {
+                NextCell();
                 if (FilterCombo("Personnage", "##filterCharacter", "Tous", filterCharacter, characterOptions, width, out var character))
                 {
                     filterCharacter = character;
@@ -184,7 +226,7 @@ public sealed partial class ConfigWindow
                 }
             }
 
-            NextColumn();
+            NextCell();
             DrawSortCombo(width);
         });
     }
@@ -289,6 +331,24 @@ public sealed partial class ConfigWindow
         RefreshHistoryList();
     }
 
+    /// <summary>Issue du combat, alignée à droite. Renvoie la largeur occupée.</summary>
+    private float DrawOutcome(EncounterView view, Vector2 topRight)
+    {
+        var text = Formatting.OutcomeText(view.Outcome, view.RemainingHp);
+        if (text.Length == 0)
+            return 0f;
+
+        var color = view.Outcome switch
+        {
+            Outcome.Victory => Success,
+            Outcome.Failure => Danger,
+            _ => TextDim,
+        };
+        var width = ImGui.CalcTextSize(text).X;
+        ImGui.GetWindowDrawList().AddText(topRight - new Vector2(width, 0), Col(color), text);
+        return width;
+    }
+
     /// <summary>Une ligne de la liste : case de sélection, résumé cliquable, corbeille. Renvoie vrai pour supprimer.</summary>
     private bool DrawEncounterCard(EncounterRecord record)
     {
@@ -300,6 +360,12 @@ public sealed partial class ConfigWindow
         var pad = 12f * S;
         var checkZone = pad + FrameH + 8f * S;
         var trashZone = FrameH + pad + 8f * S;
+
+        if (scrollToRecord == record.Id)
+        {
+            ImGui.SetScrollHereY(0.1f);
+            scrollToRecord = null;
+        }
 
         var startLocal = ImGui.GetCursorPos();
         var min = ImGui.GetCursorScreenPos();
@@ -339,7 +405,17 @@ public sealed partial class ConfigWindow
 
         drawList.AddText(new Vector2(textMax.X - dateWidth, top), Col(TextDim), date);
         drawList.PushClipRect(textMin, new Vector2(textMax.X - dateWidth - pad, textMax.Y), true);
-        drawList.AddText(new Vector2(textMin.X, top), Col(TextMain), view.Title);
+        var titleX = textMin.X;
+        if (bestRecordIds.Contains(record.Id))
+        {
+            var trophy = FontAwesomeIcon.Trophy.ToIconString();
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+            {
+                drawList.AddText(new Vector2(titleX, top), Col(SunColor), trophy);
+                titleX += ImGui.CalcTextSize(trophy).X + 6f * S;
+            }
+        }
+        drawList.AddText(new Vector2(titleX, top), Col(TextMain), view.Title);
         drawList.PopClipRect();
 
         var details = $"{record.Category}  |  {record.Place}  |  {Formatting.Duration(view.DurationSeconds)}  |  groupe {Formatting.Compact(view.TotalDps)}";
@@ -348,7 +424,8 @@ public sealed partial class ConfigWindow
             var job = plugin.JobAbbreviation(local.JobId);
             details += job.Length > 0 ? $"  |  toi {Formatting.Compact(local.Dps)} ({job})" : $"  |  toi {Formatting.Compact(local.Dps)}";
         }
-        drawList.PushClipRect(textMin, textMax, true);
+        var outcomeWidth = DrawOutcome(record.View, new Vector2(textMax.X, top + lineH + 4f * S));
+        drawList.PushClipRect(textMin, new Vector2(textMax.X - outcomeWidth - pad, textMax.Y), true);
         drawList.AddText(new Vector2(textMin.X, top + lineH + 4f * S), Col(TextDim), details);
         drawList.PopClipRect();
 

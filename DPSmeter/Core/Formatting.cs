@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Text;
 
@@ -53,15 +54,46 @@ public static class Formatting
         return hours > 0 ? $"{hours}:{minutes:00}:{secs:00}" : $"{minutes}:{secs:00}";
     }
 
-    /// <summary>Infobulle d'un combattant : tout ce qui n'a pas sa place sur la barre.</summary>
-    public static string Tooltip(CombatantView row, string shownName, string job)
+    public static string OutcomeLabel(Outcome outcome) => outcome switch
     {
+        Outcome.Victory => "Victoire",
+        Outcome.Failure => "Échec",
+        Outcome.Interrupted => "Interrompu",
+        _ => string.Empty,
+    };
+
+    /// <summary>Étiquette d'un combat : « Échec | boss à 12 % » si les PV restants sont connus.</summary>
+    public static string OutcomeText(Outcome outcome, float remainingHp)
+    {
+        var label = OutcomeLabel(outcome);
+        return outcome == Outcome.Failure && remainingHp >= 0f ? $"{label}  |  cible à {OneDecimalPercent(remainingHp)}" : label;
+    }
+
+    public static string MetricLabel(MeterMetric metric) => metric switch
+    {
+        MeterMetric.Healing => "Soins",
+        MeterMetric.DamageTaken => "Dégâts subis",
+        _ => "Dégâts",
+    };
+
+    public static string OneDecimalPercent(float fraction) =>
+        (fraction * 100f).ToString("0.0", CultureInfo.InvariantCulture).Replace('.', ',') + " %";
+
+    /// <summary>Infobulle d'un combattant : tout ce qui n'a pas sa place sur la barre.</summary>
+    public static string Tooltip(CombatantView row, string shownName, string job, double durationSeconds, int recentWindowSeconds)
+    {
+        const int MaxActions = 6;
+
         var lines = new List<string>
         {
             job.Length > 0 ? $"{shownName} ({job})" : shownName,
             $"{Full(row.Dps)} DPS  |  {Percent(row.Share)} des dégâts",
-            $"{Full(row.Damage)} dégâts",
         };
+
+        if (row.RecentDps > 0)
+            lines.Add($"{Full(row.RecentDps)} DPS sur les {recentWindowSeconds} dernières secondes");
+
+        lines.Add($"{Full(row.Damage)} dégâts");
 
         if (row.Hits > 0)
             lines.Add($"{row.Hits} coups  |  {Percent(row.CritRate)} critiques  |  {Percent(row.DirectHitRate)} directs");
@@ -72,11 +104,20 @@ public static class Formatting
             lines.Add($"DoT : {Full(row.DotDamage)}{estimated}");
         }
 
-        if (row.TopActions.Count > 0)
+        if (row.Healing > 0)
+            lines.Add($"Soins, surplus compris : {Full(row.Healing)}  ({Compact(row.Healing / Math.Max(1.0, durationSeconds))}/s)");
+        if (row.DamageTaken > 0)
+            lines.Add($"Dégâts subis : {Full(row.DamageTaken)}");
+        if (row.Deaths > 0)
+            lines.Add(row.Deaths > 1 ? $"{row.Deaths} morts" : "1 mort");
+
+        if (row.Actions is { Count: > 0 })
         {
             lines.Add(string.Empty);
-            foreach (var action in row.TopActions)
+            foreach (var action in row.Actions.Take(MaxActions))
                 lines.Add($"{action.Name} : {Compact(action.Damage)}  ({Percent(action.Share)}, {action.Hits}x)");
+            if (row.Actions.Count > MaxActions)
+                lines.Add($"... et {row.Actions.Count - MaxActions} autre(s)");
         }
 
         return string.Join("\n", lines);

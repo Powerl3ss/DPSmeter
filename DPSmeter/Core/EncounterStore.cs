@@ -16,7 +16,7 @@ public sealed record EncounterRecord(
     string CharacterName,
     EncounterView View)
 {
-    public const int CurrentFormat = 1;
+    public const int CurrentFormat = 2;
 
     public static EncounterRecord From(Encounter encounter, string category, string place, string characterName, DateTime nowUtc)
     {
@@ -176,7 +176,7 @@ public sealed class EncounterStore : IDisposable
                 }
 
                 // Le nom du fichier fait foi : il sert ensuite à retrouver le fichier à supprimer.
-                loaded.Add(record with { Id = Path.GetFileNameWithoutExtension(file) });
+                loaded.Add(record with { Id = Path.GetFileNameWithoutExtension(file), View = record.View.Normalized() });
             }
             catch (Exception ex)
             {
@@ -216,7 +216,23 @@ public enum EncounterSort
     Longest,
 }
 
-/// <summary>Filtres et tris de la page Historique. Une chaîne vide veut dire « tous ».</summary>
+/// <summary>Filtres de la page Historique. Une valeur vide (chaîne vide, job 0, issue absente) veut dire « tous ».</summary>
+public readonly record struct EncounterFilter(
+    string Category = "",
+    string Place = "",
+    string Character = "",
+    uint JobId = 0,
+    Outcome? Outcome = null)
+{
+    public bool Matches(EncounterRecord record) =>
+        (string.IsNullOrEmpty(Category) || record.Category == Category) &&
+        (string.IsNullOrEmpty(Place) || record.Place == Place) &&
+        (string.IsNullOrEmpty(Character) || record.CharacterName == Character) &&
+        (JobId == 0 || record.View.Local?.JobId == JobId) &&
+        (Outcome == null || record.View.Outcome == Outcome);
+}
+
+/// <summary>Filtres et tris de la page Historique.</summary>
 public static class EncounterQuery
 {
     public static string SortLabel(EncounterSort sort) => sort switch
@@ -229,12 +245,9 @@ public static class EncounterQuery
         _ => string.Empty,
     };
 
-    public static List<EncounterRecord> Apply(IEnumerable<EncounterRecord> records, string category, string place, string character, EncounterSort sort)
+    public static List<EncounterRecord> Apply(IEnumerable<EncounterRecord> records, EncounterFilter filter, EncounterSort sort)
     {
-        var filtered = records.Where(r =>
-            (category.Length == 0 || r.Category == category) &&
-            (place.Length == 0 || r.Place == place) &&
-            (character.Length == 0 || r.CharacterName == character));
+        var filtered = records.Where(filter.Matches);
 
         // À égalité, le plus récent d'abord : l'ordre reste stable d'une image à l'autre.
         var sorted = sort switch
@@ -256,4 +269,68 @@ public static class EncounterQuery
                .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
                .Select(g => (g.Key, g.Count()))
                .ToList();
+}
+
+/// <summary>Ton meilleur DPS sur un adversaire, avec un job et un personnage.</summary>
+public sealed record PersonalBest(
+    string Title,
+    string Place,
+    string Category,
+    string CharacterName,
+    uint JobId,
+    double BestDps,
+    string BestRecordId,
+    DateTime BestDateUtc,
+    DateTime LastDateUtc,
+    double LastDps,
+    IReadOnlyList<double> Progress)
+{
+    public int Attempts => Progress.Count;
+}
+
+/// <summary>Calcule les records personnels à partir des combats enregistrés.</summary>
+public static class PersonalBests
+{
+    /// <summary>En dessous, le DPS d'un combat n'est pas comparable : une ouverture seule le gonfle.</summary>
+    public const double MinDurationSeconds = 30;
+
+    /// <summary>Un échec ne compte pas : mourir vite après son ouverture donnerait un faux record.</summary>
+    public static bool IsEligible(EncounterRecord record) =>
+        record.View.Local is { Dps: > 0 } &&
+        record.View.DurationSeconds >= MinDurationSeconds &&
+        record.View.Outcome != Outcome.Failure;
+
+    /// <summary>Un record par adversaire, job et personnage, du plus récemment joué au plus ancien.</summary>
+    public static List<PersonalBest> Compute(IEnumerable<EncounterRecord> records) =>
+        records.Where(IsEligible)
+               .GroupBy(r => (r.View.Title, r.Place, r.CharacterName, r.View.Local!.JobId))
+               .Select(group =>
+               {
+                   var attempts = group.OrderBy(r => r.View.StartUtc).ToList();
+                   var best = attempts.OrderByDescending(r => r.View.Local!.Dps).ThenBy(r => r.View.StartUtc).First();
+                   var last = attempts[^1];
+                   return new PersonalBest(
+                       group.Key.Title, group.Key.Place, last.Category, group.Key.CharacterName, group.Key.JobId,
+                       best.View.Local!.Dps, best.Id, best.View.StartUtc,
+                       last.View.StartUtc, last.View.Local!.Dps,
+                       attempts.Select(r => r.View.Local!.Dps).ToList());
+               })
+               .OrderByDescending(b => b.LastDateUtc)
+               .ThenBy(b => b.BestRecordId, StringComparer.Ordinal)
+               .ToList();
+
+    /// <summary>Le combat bat-il un record déjà établi ? Le tout premier essai n'en bat aucun.</summary>
+    public static bool BeatsPrevious(EncounterRecord record, IEnumerable<EncounterRecord> previous)
+    {
+        if (!IsEligible(record))
+            return false;
+
+        var local = record.View.Local!;
+        var best = previous
+            .Where(r => r.Id != record.Id && IsEligible(r) && r.View.Title == record.View.Title && r.Place == record.Place &&
+                        r.CharacterName == record.CharacterName && r.View.Local!.JobId == local.JobId)
+            .Select(r => (double?)r.View.Local!.Dps)
+            .Max();
+        return best != null && local.Dps > best;
+    }
 }

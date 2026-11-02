@@ -17,7 +17,8 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 
 **Le HUD**
 - Une barre par joueur, du plus gros DPS au plus petit, à la couleur de son job.
-- DPS, part des dégâts et, en option, dégâts totaux. Ta ligne est soulignée et reste visible même au-delà de la limite de lignes.
+- DPS moyen, DPS des dernières secondes en combat, part des dégâts et, en option, dégâts totaux. Ta ligne est soulignée et reste visible même au-delà de la limite de lignes.
+- Trois mesures au choix : dégâts, soins ou dégâts subis. Les morts sont signalées sur la barre.
 - Au survol : dégâts, taux de critiques et de coups directs, part des DoT, meilleures actions.
 - Durée du combat et DPS du groupe dans l'en-tête.
 - Largeur, taille du texte, opacité, couleurs, position verrouillable, clics traversants.
@@ -33,7 +34,10 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 
 **Le reste**
 - Combats enregistrés sur ton PC, retrouvables d'une session à l'autre, sans limite de temps.
-- Page Historique : filtres par type de contenu (donjons, défis, raids...), par lieu et par personnage, tri par date, DPS ou durée, détail de chaque combat.
+- Page Historique : filtres par type de contenu (donjons, défis, raids...), lieu, job, issue et personnage, tri par date, DPS ou durée.
+- Détail de chaque combat : tableau des joueurs, courbe de DPS avec les morts, toutes les actions et tous les soins de chaque joueur.
+- Issue de chaque combat : victoire, échec avec les PV restants de la cible, ou interrompu.
+- Page Records : ton meilleur DPS par adversaire, job et personnage, ta progression, et un message quand tu bats un record.
 - Suppression d'un combat ou d'une sélection (Ctrl + clic). Rien n'est supprimé automatiquement.
 - Résumé en fin de combat dans le chat (visible par toi seul, désactivé par défaut).
 - Option pour masquer le nom des autres joueurs.
@@ -70,7 +74,7 @@ DPSmeter/
 │   ├── Encounter.cs       un combat et ses combattants
 │   ├── EncounterTracker.cs  début et fin des combats, historique
 │   ├── EncounterView.cs   photo d'un combat, prête à afficher
-│   ├── EncounterStore.cs  combats enregistrés sur le disque, filtres et tris
+│   ├── EncounterStore.cs  combats enregistrés sur le disque, filtres, tris et records
 │   ├── DotTable.cs        DoT connus et partage d'un tick
 │   └── Formatting.cs      nombres, durées, infobulles, couleurs des jobs
 ├── images/                logo

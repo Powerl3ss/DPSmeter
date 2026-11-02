@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using Dalamud.Configuration;
+using DPSmeter.Core;
 
 namespace DPSmeter;
 
@@ -28,7 +29,11 @@ public class Configuration : IPluginConfiguration
     public bool HudCollapsed { get; set; } = false;
 
     // --- Contenu du HUD ---
+    public MeterMetric HudMetric { get; set; } = MeterMetric.Damage;
     public int MaxRows { get; set; } = 8;
+    public bool ShowRecentDps { get; set; } = true;
+    public int RecentWindowSeconds { get; set; } = 10;
+    public bool ShowDeaths { get; set; } = true;
     public bool ShowJobIcons { get; set; } = true;
     public bool ShowPercent { get; set; } = true;
     public bool ShowTotalDamage { get; set; } = false;
@@ -47,6 +52,7 @@ public class Configuration : IPluginConfiguration
     public bool SaveEncounters { get; set; } = true;
     public int MinSaveSeconds { get; set; } = 10;
     public bool ChatSummary { get; set; } = false;
+    public bool ChatRecords { get; set; } = true;
 
     // --- Couleurs ---
     public bool UseJobColors { get; set; } = true;

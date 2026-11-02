@@ -18,12 +18,13 @@ namespace DPSmeter.Windows;
 /// <summary>Fenêtre de réglages : en-tête, barre de navigation à gauche, pages, statut en bas.</summary>
 public sealed partial class ConfigWindow : Window, IDisposable
 {
-    private enum Page { Home, History, Display, Measure, About }
+    private enum Page { Home, History, Records, Display, Measure, About }
 
     private static readonly (Page Page, FontAwesomeIcon Icon, string Label)[] Pages =
     {
         (Page.Home, FontAwesomeIcon.Home, "Accueil"),
         (Page.History, FontAwesomeIcon.History, "Historique"),
+        (Page.Records, FontAwesomeIcon.Trophy, "Records"),
         (Page.Display, FontAwesomeIcon.Palette, "Affichage"),
         (Page.Measure, FontAwesomeIcon.Crosshairs, "Mesure"),
         (Page.About, FontAwesomeIcon.InfoCircle, "À propos"),
@@ -385,6 +386,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
         {
             case Page.Home: DrawHomePage(); break;
             case Page.History: DrawHistoryPage(); break;
+            case Page.Records: DrawRecordsPage(); break;
             case Page.Display: DrawDisplayPage(); break;
             case Page.Measure: DrawMeasurePage(); break;
             case Page.About: DrawAboutPage(); break;
@@ -421,19 +423,25 @@ public sealed partial class ConfigWindow : Window, IDisposable
         Hero(view.Title,
              view.IsActive ? "Combat en cours" : "Dernier combat",
              Formatting.Duration(view.DurationSeconds),
-             string.IsNullOrEmpty(view.ZoneName) ? null : view.ZoneName);
+             view.IsActive || view.Outcome == Outcome.Unknown ? (string.IsNullOrEmpty(view.ZoneName) ? null : view.ZoneName) : Formatting.OutcomeText(view.Outcome, view.RemainingHp));
 
         CardsRow(
             () => StatCard(FontAwesomeIcon.User, "Ton DPS", local != null ? Formatting.Compact(local.Dps) : "-",
-                           local != null ? $"{Formatting.Percent(local.Share)} des dégâts  |  rang {rank}/{view.Combatants.Count}" : "Aucun dégât de ta part"),
+                           local != null ? LocalCaption(view, local, rank) : "Aucun dégât de ta part"),
             () => StatCard(FontAwesomeIcon.Users, "DPS du groupe", Formatting.Compact(view.TotalDps),
                            $"{Formatting.Compact(view.TotalDamage)} dégâts au total"));
 
         SectionTitle("Détail", $"{view.Combatants.Count} combattant(s)");
-        DrawCombatantTable(view);
+        DrawEncounterDetails(view);
 
         ImGui.Dummy(new Vector2(0, 4f * S));
         DrawHomeButtons(view);
+    }
+
+    private string LocalCaption(EncounterView view, CombatantView local, int rank)
+    {
+        var caption = $"{Formatting.Percent(local.Share)} des dégâts  |  rang {rank}/{view.Combatants.Count}";
+        return BestFor(view) is { } best ? $"{caption}  |  record {Formatting.Compact(best.BestDps)}" : caption;
     }
 
     private void DrawHomeButtons(EncounterView? view)
@@ -469,66 +477,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
             ImGui.TextUnformatted(value);
 
         TextDimmed(caption);
-    }
-
-    /// <summary>Tableau détaillé d'un combat, avec l'infobulle des actions au survol.</summary>
-    private void DrawCombatantTable(EncounterView view)
-    {
-        Card(() =>
-        {
-            var dps = cardInner * 0.38f;
-            var damage = cardInner * 0.52f;
-            var share = cardInner * 0.66f;
-            var crit = cardInner * 0.76f;
-            var direct = cardInner * 0.88f;
-
-            void Cell(float x, string text, Vector4 color, float rowStart)
-            {
-                ImGui.SameLine(0, 0);
-                ImGui.SetCursorPosX(rowStart + x);
-                ImGui.TextColored(color, text);
-            }
-
-            var headerStart = ImGui.GetCursorPosX();
-            ImGui.TextColored(TextDim, "JOUEUR");
-            Cell(dps, "DPS", TextDim, headerStart);
-            Cell(damage, "DÉGÂTS", TextDim, headerStart);
-            Cell(share, "PART", TextDim, headerStart);
-            Cell(crit, "CRIT.", TextDim, headerStart);
-            Cell(direct, "DIRECT", TextDim, headerStart);
-            Divider();
-
-            var top = (float)Math.Max(1, view.TopDamage);
-            for (var i = 0; i < view.Combatants.Count; i++)
-            {
-                var row = view.Combatants[i];
-                var shown = plugin.DisplayName(row);
-                var job = plugin.JobAbbreviation(row.JobId);
-                var rowStart = ImGui.GetCursorPosX();
-                var rowTop = ImGui.GetCursorScreenPos();
-
-                ImGui.TextColored(row.IsLocal ? Accent : TextMain, job.Length > 0 ? $"{i + 1}. {shown} ({job})" : $"{i + 1}. {shown}");
-                Cell(dps, Formatting.Compact(row.Dps), TextMain, rowStart);
-                Cell(damage, Formatting.Compact(row.Damage), TextMain, rowStart);
-                Cell(share, Formatting.Percent(row.Share), TextMain, rowStart);
-                Cell(crit, row.Hits > 0 ? Formatting.Percent(row.CritRate) : "-", TextDim, rowStart);
-                Cell(direct, row.Hits > 0 ? Formatting.Percent(row.DirectHitRate) : "-", TextDim, rowStart);
-
-                // Fine barre sous la ligne, à la couleur du joueur.
-                var color = Cfg.UseJobColors ? JobColors.Of(row.JobId) ?? Accent : Accent;
-                var barTop = ImGui.GetCursorScreenPos();
-                var barH = 3f * S;
-                ImGui.Dummy(new Vector2(cardInner, barH));
-                ImGui.GetWindowDrawList().AddRectFilled(barTop, barTop + new Vector2(cardInner * Math.Clamp(row.Damage / top, 0f, 1f), barH), Col(color with { W = 0.8f }), barH / 2f);
-
-                var mouse = ImGui.GetMousePos();
-                var hovered = ImGui.IsWindowHovered() &&
-                              mouse.X >= rowTop.X && mouse.X < rowTop.X + cardInner &&
-                              mouse.Y >= rowTop.Y && mouse.Y < barTop.Y + barH;
-                if (hovered)
-                    ImGui.SetTooltip(Formatting.Tooltip(row, shown, job));
-            }
-        });
     }
 
     // =================================================================== Affichage
@@ -567,6 +515,23 @@ public sealed partial class ConfigWindow : Window, IDisposable
                 Card(() =>
                 {
                     changed |= ToggleRow("Icônes de jobs", null, Cfg.ShowJobIcons, v => Cfg.ShowJobIcons = v);
+                    var metric = (int)Cfg.HudMetric;
+                    SettingRow("Mesure affichée", "Aussi dans le menu du clic droit sur le HUD.", 320f * S, () =>
+                    {
+                        var chosen = Segmented("##hudMetric", new[]
+                        {
+                            ("Dégâts", FontAwesomeIcon.Fire),
+                            ("Soins", FontAwesomeIcon.Heart),
+                            ("Subis", FontAwesomeIcon.ShieldAlt),
+                        }, metric, 320f * S);
+                        if (chosen != metric)
+                        {
+                            Cfg.HudMetric = (MeterMetric)chosen;
+                            changed = true;
+                        }
+                    }, FrameH + 20f * S);
+                    changed |= ToggleRow("DPS récent", "En combat, le DPS des dernières secondes s'ajoute à la moyenne. La durée se règle dans l'onglet Mesure.", Cfg.ShowRecentDps, v => Cfg.ShowRecentDps = v);
+                    changed |= ToggleRow("Morts", "Une tête de mort sur la barre des joueurs tombés.", Cfg.ShowDeaths, v => Cfg.ShowDeaths = v);
                     changed |= ToggleRow("Part des dégâts", "Le pourcentage à droite de chaque barre.", Cfg.ShowPercent, v => Cfg.ShowPercent = v);
                     changed |= ToggleRow("Dégâts totaux", "Le total, en plus du DPS.", Cfg.ShowTotalDamage, v => Cfg.ShowTotalDamage = v);
                     changed |= ToggleRow("Masquer le nom des autres", "Affiche leur job à la place, pratique pour une capture d'écran.", Cfg.HideOtherNames, v => Cfg.HideOtherNames = v);
@@ -652,6 +617,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
             changed |= ToggleRow("Ajouter les familiers au joueur", "Fée, carbuncle, reine automate... comptent pour leur maître.", Cfg.MergePets, v => Cfg.MergePets = v);
             changed |= ToggleRow("Transcendance sur sa propre ligne", "Sinon, ses dégâts comptent pour le joueur qui la lance.", Cfg.SeparateLimitBreak, v => Cfg.SeparateLimitBreak = v);
             changed |= SliderIntRow("Fin de combat", "Secondes sans dégâts, une fois sorti de combat, avant de clore le combat.", Cfg.EndDelaySeconds, 1, 30, v => Cfg.EndDelaySeconds = v);
+            changed |= SliderIntRow("Fenêtre du DPS récent", "En secondes.", Cfg.RecentWindowSeconds, 3, Combatant.MaxRecentWindow, v => Cfg.RecentWindowSeconds = v);
         });
 
         SectionTitle("Historique");
@@ -661,6 +627,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
             using (ImRaii.Disabled(!Cfg.SaveEncounters))
                 changed |= SliderIntRow("Durée minimale", "En secondes. Les combats plus courts ne sont pas enregistrés.", Cfg.MinSaveSeconds, 0, 120, v => Cfg.MinSaveSeconds = v);
             changed |= ToggleRow("Résumé dans le chat", "Message en fin de combat. Il n'est visible que par toi.", Cfg.ChatSummary, v => Cfg.ChatSummary = v);
+            changed |= ToggleRow("Annoncer les nouveaux records", "Message dans le chat quand tu bats ton record. Il n'est visible que par toi.", Cfg.ChatRecords, v => Cfg.ChatRecords = v);
         });
 
         SectionTitle("Précision des DoT");
@@ -716,7 +683,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
         {
             CardLabel("Astuces");
             TextDimmed("Survole une barre du HUD : détail du joueur et de ses meilleures actions.");
-            TextDimmed("Clic droit sur le HUD : menu rapide (terminer le combat, verrouiller, replier...).");
+            TextDimmed("Clic droit sur le HUD : menu rapide (mesure affichée, terminer le combat, verrouiller...).");
             TextDimmed("Clic sur le titre du HUD : le replier ou le déplier.");
         });
 
@@ -735,6 +702,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
                 TextDimmed(parser.HookError);
             TextDimmed($"Actions lues : {Formatting.Full(parser.ActionPackets)}  |  coups : {Formatting.Full(parser.DamageEffects)}  |  ticks de DoT : {Formatting.Full(parser.DotTicks)}");
             TextDimmed($"Dégâts de DoT sans auteur trouvé : {Formatting.Full(parser.UnattributedDotDamage)}");
+            TextDimmed($"Soins lus : {Formatting.Full(parser.HealEffects)}  |  ticks de HoT : {Formatting.Full(parser.HotTicks)}  |  morts vues : {Formatting.Full(parser.Deaths)}");
         });
 
         if (FancyButton("##repo", "Ouvrir la page GitHub", FontAwesomeIcon.ExternalLinkAlt, ButtonSize("Ouvrir la page GitHub", FontAwesomeIcon.ExternalLinkAlt), primary: false))

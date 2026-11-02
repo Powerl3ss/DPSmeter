@@ -4,6 +4,7 @@ using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Interface;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
@@ -31,6 +32,11 @@ public sealed class HudWindow : Window, IDisposable
 
     // Largeur affichée de chaque barre : elle glisse vers sa nouvelle valeur.
     private readonly Dictionary<uint, float> shownFractions = new();
+
+    // Lignes de la mesure affichée, recalculées quand le combat ou la mesure change.
+    private EncounterView? rowsView;
+    private MeterMetric rowsMetric;
+    private List<CombatantView> rows = new();
 
     // Police du titre construite à sa vraie taille : agrandir le texte avec SetWindowFontScale le rend flou.
     private IFontHandle? titleFont;
@@ -149,8 +155,8 @@ public sealed class HudWindow : Window, IDisposable
 
         // Durée et DPS toujours visibles : à zéro tant qu'aucun combat n'a eu lieu.
         var summary = view != null
-            ? $"{Formatting.Duration(view.DurationSeconds)}  |  {Formatting.Compact(view.TotalDps)}"
-            : $"{Formatting.Duration(0)}  |  {Formatting.Compact(0)}";
+            ? $"{Formatting.Duration(view.DurationSeconds)}  |  {MetricPrefix()}{Formatting.Compact(view.TotalOf(Cfg.HudMetric) / view.DurationSeconds)}"
+            : $"{Formatting.Duration(0)}  |  {MetricPrefix()}{Formatting.Compact(0)}";
         var summaryWidth = ImGui.CalcTextSize(summary).X;
         var y = start.Y + (titleHeight - ImGui.GetTextLineHeight()) / 2f;
         ImGui.SetCursorPos(new Vector2(start.X + width - summaryWidth, y));
@@ -159,8 +165,11 @@ public sealed class HudWindow : Window, IDisposable
         {
             if (view != null)
             {
-                var state = view.IsActive ? "En cours" : "Terminé";
-                ImGui.SetTooltip($"{view.Title}\n{state}  |  {Formatting.Duration(view.DurationSeconds)}\n{Formatting.Full(view.TotalDps)} DPS du groupe\n{Formatting.Full(view.TotalDamage)} dégâts");
+                var outcome = Formatting.OutcomeText(view.Outcome, view.RemainingHp);
+                var state = view.IsActive ? "En cours" : outcome.Length > 0 ? outcome : "Terminé";
+                var healing = view.TotalHealing > 0 ? $"\n{Formatting.Full(view.TotalHealing)} soins" : string.Empty;
+                var taken = view.TotalDamageTaken > 0 ? $"\n{Formatting.Full(view.TotalDamageTaken)} dégâts subis" : string.Empty;
+                ImGui.SetTooltip($"{view.Title}\n{state}  |  {Formatting.Duration(view.DurationSeconds)}\n{Formatting.Full(view.TotalDps)} DPS du groupe\n{Formatting.Full(view.TotalDamage)} dégâts{healing}{taken}");
             }
             else
             {
@@ -199,21 +208,44 @@ public sealed class HudWindow : Window, IDisposable
 
     // ------------------------------------------------------------ Barres
 
+    private string MetricPrefix() => Cfg.HudMetric switch
+    {
+        MeterMetric.Healing => "Soins ",
+        MeterMetric.DamageTaken => "Subis ",
+        _ => string.Empty,
+    };
+
     private void DrawRows(EncounterView view, float width)
     {
-        var limit = Math.Max(1, Cfg.MaxRows);
-        var top = (float)Math.Max(1, view.TopDamage);
+        var metric = Cfg.HudMetric;
 
-        for (var i = 0; i < view.Combatants.Count && i < limit; i++)
-            DrawRow(view.Combatants[i], i, top, width);
+        // Un autre classement seulement quand la photo du combat ou la mesure change, pas à chaque image.
+        if (!ReferenceEquals(rowsView, view) || rowsMetric != metric)
+        {
+            rowsView = view;
+            rowsMetric = metric;
+            rows = view.RowsFor(metric);
+        }
+
+        if (rows.Count == 0)
+        {
+            Secondary($"{Formatting.MetricLabel(metric)} : rien pour ce combat");
+            return;
+        }
+
+        var limit = Math.Max(1, Cfg.MaxRows);
+        var top = (float)Math.Max(1, rows[0].ValueOf(metric));
+
+        for (var i = 0; i < rows.Count && i < limit; i++)
+            DrawRow(view, rows[i], i, top, width);
 
         // Toi au-delà de la limite de lignes : tu restes visible, à ton vrai rang.
-        var localIndex = view.Combatants.ToList().FindIndex(c => c.IsLocal);
+        var localIndex = rows.FindIndex(c => c.IsLocal);
         if (localIndex >= limit)
-            DrawRow(view.Combatants[localIndex], localIndex, top, width);
+            DrawRow(view, rows[localIndex], localIndex, top, width);
     }
 
-    private void DrawRow(CombatantView row, int rank, float topDamage, float width)
+    private void DrawRow(EncounterView view, CombatantView row, int rank, float topValue, float width)
     {
         var scale = ImGuiHelpers.GlobalScale * Math.Clamp(Cfg.HudScale, 0.6f, 2f);
         var lineH = ImGui.GetTextLineHeight();
@@ -229,8 +261,8 @@ public sealed class HudWindow : Window, IDisposable
         // Fond sombre pour garder la barre lisible même sans fond de HUD.
         drawList.AddRectFilled(min, max, ImGui.GetColorU32(new Vector4(0.04f, 0.07f, 0.11f, hovered ? 0.70f : 0.45f)), rounding);
 
-        // Remplissage, relatif au meilleur DPS du combat.
-        var fraction = Math.Clamp(row.Damage / topDamage, 0f, 1f);
+        // Remplissage, relatif au meilleur de la mesure affichée.
+        var fraction = Math.Clamp(row.ValueOf(Cfg.HudMetric) / topValue, 0f, 1f);
         var shown = AnimateFraction(row.Id, fraction);
         var color = BarColor(row);
         if (shown * width > 1f)
@@ -253,27 +285,62 @@ public sealed class HudWindow : Window, IDisposable
             nameX += lineH + pad * 0.75f;
 
         // Valeurs à droite, nom à gauche (coupé s'il déborde).
-        var right = RightText(row);
+        var white = new Vector4(1f, 1f, 1f, 1f);
+        var right = RightText(view, row);
         var rightW = ImGui.CalcTextSize(right).X;
-        DrawText(new Vector2(max.X - pad - rightW, textY), new Vector4(1f, 1f, 1f, 1f), right);
+        DrawText(new Vector2(max.X - pad - rightW, textY), white, right);
+
+        var nameEnd = max.X - pad * 2f - rightW;
+        if (Cfg.ShowDeaths && row.Deaths > 0)
+            nameEnd = DrawDeaths(row.Deaths, nameEnd, textY, pad);
 
         var name = plugin.DisplayName(row);
-        drawList.PushClipRect(new Vector2(nameX, min.Y), new Vector2(max.X - pad * 2f - rightW, max.Y), true);
-        DrawText(new Vector2(nameX, textY), new Vector4(1f, 1f, 1f, 1f), $"{rank + 1}. {name}");
+        drawList.PushClipRect(new Vector2(nameX, min.Y), new Vector2(nameEnd, max.Y), true);
+        DrawText(new Vector2(nameX, textY), white, $"{rank + 1}. {name}");
         drawList.PopClipRect();
 
         if (hovered)
-            ImGui.SetTooltip(Formatting.Tooltip(row, name, plugin.JobAbbreviation(row.JobId)));
+            ImGui.SetTooltip(Formatting.Tooltip(row, name, plugin.JobAbbreviation(row.JobId), view.DurationSeconds, Cfg.RecentWindowSeconds));
     }
 
-    private string RightText(CombatantView row)
+    /// <summary>Tête de mort (avec le nombre s'il y en a plusieurs), à gauche des valeurs. Renvoie la nouvelle limite du nom.</summary>
+    private float DrawDeaths(int deaths, float right, float textY, float pad)
     {
-        var text = Formatting.Compact(row.Dps);
+        var red = new Vector4(1f, 0.47f, 0.47f, 1f);
+        var count = deaths > 1 ? deaths.ToString() : string.Empty;
+        var countWidth = count.Length > 0 ? ImGui.CalcTextSize(count).X + pad * 0.5f : 0f;
+        if (count.Length > 0)
+            DrawText(new Vector2(right - countWidth + pad * 0.5f, textY), red, count);
+
+        var icon = FontAwesomeIcon.Skull.ToIconString();
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            var iconWidth = ImGui.CalcTextSize(icon).X;
+            var x = right - countWidth - iconWidth;
+            DrawText(new Vector2(x, textY), red, icon);
+            return x - pad;
+        }
+    }
+
+    private string RightText(EncounterView view, CombatantView row)
+    {
+        var metric = Cfg.HudMetric;
+        var value = row.ValueOf(metric);
+        var parts = new List<string>(4);
+
         if (Cfg.ShowTotalDamage)
-            text = $"{Formatting.Compact(row.Damage)}  {text}";
+            parts.Add(Formatting.Compact(value));
+
+        parts.Add(Formatting.Compact(value / view.DurationSeconds));
+
+        // DPS récent : seulement sur les dégâts et pendant le combat, ensuite il ne veut plus rien dire.
+        if (metric == MeterMetric.Damage && Cfg.ShowRecentDps && view.IsActive)
+            parts.Add(Formatting.Compact(row.RecentDps));
+
         if (Cfg.ShowPercent)
-            text = $"{text}  {Formatting.Percent(row.Share)}";
-        return text;
+            parts.Add(Formatting.Percent(value / (float)Math.Max(1, view.TotalOf(metric))));
+
+        return string.Join(" | ", parts);
     }
 
     private Vector4 BarColor(CombatantView row)
@@ -379,6 +446,15 @@ public sealed class HudWindow : Window, IDisposable
 
         if (ImGui.MenuItem("Remettre à zéro"))
             plugin.ClearAll();
+
+        ImGui.Separator();
+
+        foreach (var metric in Enum.GetValues<MeterMetric>())
+        {
+            var label = Cfg.HudMetric == metric ? $"> {Formatting.MetricLabel(metric)}" : Formatting.MetricLabel(metric);
+            if (ImGui.MenuItem(label))
+                Toggle(c => c.HudMetric = metric);
+        }
 
         ImGui.Separator();
 
