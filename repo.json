@@ -3,7 +3,7 @@
     "Author": "Powerl3ss",
     "Name": "DPSmeter",
     "InternalName": "DPSmeter",
-    "AssemblyVersion": "0.3.2.0",
+    "AssemblyVersion": "0.3.3.0",
     "Description": "",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/Powerl3ss/DPSmeter",
@@ -27,6 +27,6 @@
     "IconUrl": "https://raw.githubusercontent.com/Powerl3ss/DPSmeter/main/DPSmeter/images/icon.png",
     "IsHide": false,
     "IsTestingExclusive": false,
-    "LastUpdate": 1793661302
+    "LastUpdate": 1793661535
   }
 ]
