@@ -148,19 +148,29 @@ public sealed class HudWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip((Cfg.HudCollapsed ? "Clic pour déplier le HUD" : "Clic pour replier le HUD") + "\nClic droit : réglages et options");
 
-        if (view != null)
+        // Durée et DPS toujours visibles : à zéro tant qu'aucun combat n'a eu lieu.
+        var summary = view != null
+            ? $"{Formatting.Duration(view.DurationSeconds)}  |  {Formatting.Compact(view.TotalDps)}"
+            : $"{Formatting.Duration(0)}  |  {Formatting.Compact(0)}";
+        var summaryWidth = ImGui.CalcTextSize(summary).X;
+        var y = start.Y + (titleHeight - ImGui.GetTextLineHeight()) / 2f;
+        ImGui.SetCursorPos(new Vector2(start.X + width - summaryWidth, y));
+        Secondary(summary);
+        if (ImGui.IsItemHovered())
         {
-            var summary = $"{Formatting.Duration(view.DurationSeconds)}  |  {Formatting.Compact(view.TotalDps)}";
-            var summaryWidth = ImGui.CalcTextSize(summary).X;
-            var y = start.Y + (titleHeight - ImGui.GetTextLineHeight()) / 2f;
-            ImGui.SetCursorPos(new Vector2(start.X + width - summaryWidth, y));
-            Secondary(summary);
-            if (ImGui.IsItemHovered())
+            if (view != null)
             {
                 var state = view.IsActive ? "En cours" : "Terminé";
                 ImGui.SetTooltip($"{view.Title}\n{state}  |  {Formatting.Duration(view.DurationSeconds)}\n{Formatting.Full(view.TotalDps)} DPS du groupe\n{Formatting.Full(view.TotalDamage)} dégâts");
             }
+            else
+            {
+                ImGui.SetTooltip("En attente d'un combat");
+            }
+        }
 
+        if (view != null)
+        {
             // Pastille « en combat » juste après le titre.
             if (view.IsActive)
             {
