@@ -304,7 +304,8 @@ public sealed partial class ConfigWindow
             }
 
             var headerStart = ImGui.GetCursorPosX();
-            ImGui.TextColored(TextDim, "ACTION");
+            // Pas de nom pour cette colonne : le titre de la carte dit déjà qu'il s'agit des actions.
+            ImGui.Dummy(new Vector2(0, ImGui.GetTextLineHeight()));
             Cell(amount, showHeals ? "SOINS" : "DÉGÂTS", TextDim, headerStart);
             Cell(share, "PART", TextDim, headerStart);
             Cell(hits, "COUPS", TextDim, headerStart);
