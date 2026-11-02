@@ -429,6 +429,15 @@ public sealed partial class ConfigWindow
         return clicked;
     }
 
+    /// <summary>Coche tracée à la main : proportionnelle au rond, elle reste toujours à l'intérieur (une icône de police en dépasse).</summary>
+    private void DrawCheckInCircle(ImDrawListPtr drawList, Vector2 center, float radius)
+    {
+        drawList.PathLineTo(center + new Vector2(-0.42f, 0.02f) * radius);
+        drawList.PathLineTo(center + new Vector2(-0.12f, 0.32f) * radius);
+        drawList.PathLineTo(center + new Vector2(0.44f, -0.30f) * radius);
+        drawList.PathStroke(Col(OnAccent), ImDrawFlags.None, Math.Max(1.5f, radius * 0.20f));
+    }
+
     /// <summary>Rond à cocher (page d'accueil).</summary>
     private bool CheckCircle(string id, bool done)
     {
@@ -443,7 +452,7 @@ public sealed partial class ConfigWindow
         if (done)
         {
             drawList.AddCircleFilled(center, radius, Col(Accent));
-            DrawIconCentered(FontAwesomeIcon.Check, min, min + new Vector2(size, size), OnAccent);
+            DrawCheckInCircle(drawList, center, radius);
         }
         else
         {
@@ -517,7 +526,7 @@ public sealed partial class ConfigWindow
         if (selected)
         {
             drawList.AddCircleFilled(center, radius, Col(Accent));
-            DrawIconCentered(FontAwesomeIcon.Check, center - new Vector2(radius, radius), center + new Vector2(radius, radius), OnAccent);
+            DrawCheckInCircle(drawList, center, radius);
         }
         else
         {
