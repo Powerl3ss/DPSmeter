@@ -325,6 +325,6 @@ internal static class Tests
     public static void TooltipHasNoLongDash()
     {
         var row = EncounterView.Sample("Moi", 25).Combatants[0];
-        True(!Formatting.Tooltip(row, row.Name, "MNO").Contains('-'), "tiret long dans l'infobulle");
+        True(!Formatting.Tooltip(row, row.Name, "MNO").Contains('\u2014'), "tiret long dans l'infobulle");
     }
 }
