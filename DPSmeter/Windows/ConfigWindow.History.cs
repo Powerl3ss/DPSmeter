@@ -153,6 +153,13 @@ public sealed partial class ConfigWindow
             var columns = showCharacters ? 4 : 3;
             var width = (cardInner - gap * (columns - 1)) / columns;
 
+            // Colonnes placées à la main : ImGui.SameLine décalerait vers le bas le texte de chaque
+            // colonne suivante, pour l'aligner sur le texte de la liste déroulante d'à côté.
+            var start = ImGui.GetCursorPos();
+            var column = 0;
+            void NextColumn() => ImGui.SetCursorPos(new Vector2(start.X + column++ * (width + gap), start.Y));
+
+            NextColumn();
             if (FilterCombo("Type", "##filterType", "Tous les types", filterCategory, categoryOptions, width, out var category))
             {
                 filterCategory = category;
@@ -160,7 +167,7 @@ public sealed partial class ConfigWindow
                 OnFiltersChanged();
             }
 
-            ImGui.SameLine(0, gap);
+            NextColumn();
             if (FilterCombo("Lieu", "##filterPlace", "Tous les lieux", filterPlace, placeOptions, width, out var place))
             {
                 filterPlace = place;
@@ -169,7 +176,7 @@ public sealed partial class ConfigWindow
 
             if (showCharacters)
             {
-                ImGui.SameLine(0, gap);
+                NextColumn();
                 if (FilterCombo("Personnage", "##filterCharacter", "Tous", filterCharacter, characterOptions, width, out var character))
                 {
                     filterCharacter = character;
@@ -177,7 +184,7 @@ public sealed partial class ConfigWindow
                 }
             }
 
-            ImGui.SameLine(0, gap);
+            NextColumn();
             DrawSortCombo(width);
         });
     }
