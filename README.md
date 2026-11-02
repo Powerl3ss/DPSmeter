@@ -32,7 +32,9 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 - Ripostes des tanks et ticks de DoT comptés.
 
 **Le reste**
-- Historique des combats de la session, avec le détail de chacun.
+- Combats enregistrés sur ton PC, retrouvables d'une session à l'autre, sans limite de temps.
+- Page Historique : filtres par type de contenu (donjons, défis, raids...), par lieu et par personnage, tri par date, DPS ou durée, détail de chaque combat.
+- Suppression d'un combat ou d'une sélection (Ctrl + clic). Rien n'est supprimé automatiquement.
 - Résumé en fin de combat dans le chat (visible par toi seul, désactivé par défaut).
 - Option pour masquer le nom des autres joueurs.
 
@@ -47,7 +49,7 @@ Le jeu annonce le montant de chaque tick, mais pas toujours qui l'a causé. Le p
 | `/dps` | Affiche / masque le HUD |
 | `/dps config` | Ouvre les réglages |
 | `/dps end` | Termine le combat en cours |
-| `/dps reset` | Efface le combat en cours et l'historique |
+| `/dps reset` | Remet le HUD à zéro (les combats enregistrés sont conservés) |
 | `/dps debug` | Affiche les compteurs de diagnostic dans le chat |
 
 `/dpsmeter` fonctionne aussi, si `/dps` est déjà pris par un autre plugin.
@@ -68,6 +70,7 @@ DPSmeter/
 │   ├── Encounter.cs       un combat et ses combattants
 │   ├── EncounterTracker.cs  début et fin des combats, historique
 │   ├── EncounterView.cs   photo d'un combat, prête à afficher
+│   ├── EncounterStore.cs  combats enregistrés sur le disque, filtres et tris
 │   ├── DotTable.cs        DoT connus et partage d'un tick
 │   └── Formatting.cs      nombres, durées, infobulles, couleurs des jobs
 ├── images/                logo

@@ -44,7 +44,8 @@ public class Configuration : IPluginConfiguration
     public bool MergePets { get; set; } = true;
     public bool SeparateLimitBreak { get; set; } = true;
     public int EndDelaySeconds { get; set; } = 5;
-    public int MaxHistory { get; set; } = 20;
+    public bool SaveEncounters { get; set; } = true;
+    public int MinSaveSeconds { get; set; } = 10;
     public bool ChatSummary { get; set; } = false;
 
     // --- Couleurs ---

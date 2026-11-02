@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using Dalamud.Game.ClientState.Conditions;
 using Dalamud.Game.Command;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Dalamud.Utility;
 using DPSmeter.Combat;
 using DPSmeter.Core;
 using DPSmeter.Windows;
@@ -31,6 +33,7 @@ public sealed class Plugin : IDalamudPlugin
     private const string CommandName = "/dps";
     private const string LongCommandName = "/dpsmeter";
     private const string ChatPrefix = "[DPSmeter] ";
+    private const string OpenWorldCategory = "Monde ouvert";
 
     // L'affichage est recalculé quatre fois par seconde : lisible, et sans coût à chaque image.
     private static readonly TimeSpan ViewRefresh = TimeSpan.FromMilliseconds(250);
@@ -40,6 +43,7 @@ public sealed class Plugin : IDalamudPlugin
 
     public EncounterTracker Tracker { get; } = new();
     public CombatParser Parser { get; }
+    public EncounterStore Store { get; }
 
     private readonly HudWindow hudWindow;
     private readonly ConfigWindow configWindow;
@@ -62,6 +66,9 @@ public sealed class Plugin : IDalamudPlugin
 
     public string ZoneName { get; private set; } = string.Empty;
 
+    /// <summary>Type de contenu de la zone actuelle (Donjons, Défis, Raids...), pour trier l'historique.</summary>
+    public string ZoneCategory { get; private set; } = OpenWorldCategory;
+
     /// <summary>Vrai en combat, et quelques secondes après (pour laisser le temps de lire le résultat).</summary>
     public bool RecentlyInCombat =>
         Condition[ConditionFlag.InCombat] || Tracker.IsActive ||
@@ -70,7 +77,10 @@ public sealed class Plugin : IDalamudPlugin
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
-        Tracker.MaxHistory = Configuration.MaxHistory;
+        Store = new EncounterStore(
+            Path.Combine(PluginInterface.GetPluginConfigDirectory(), "encounters"),
+            (ex, what) => Log.Error(ex, what));
+        Store.LoadInBackground();
         UpdateZoneName(ClientState.TerritoryType);
 
         Parser = new CombatParser(this, Tracker);
@@ -84,7 +94,7 @@ public sealed class Plugin : IDalamudPlugin
 
         var commandInfo = new CommandInfo(OnCommand)
         {
-            HelpMessage = "Affiche/masque le HUD. « /dps config » : réglages. « /dps end » : termine le combat. « /dps reset » : efface tout.",
+            HelpMessage = "Affiche/masque le HUD. « /dps config » : réglages. « /dps end » : termine le combat. « /dps reset » : remet le HUD à zéro.",
         };
         CommandManager.AddHandler(CommandName, commandInfo);
         CommandManager.AddHandler(LongCommandName, new CommandInfo(OnCommand) { HelpMessage = "Comme /dps.", ShowInHelp = false });
@@ -93,6 +103,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi += ToggleHud;
         ClientState.TerritoryChanged += OnTerritoryChanged;
+        ClientState.Logout += OnLogout;
         Framework.Update += OnFrameworkUpdate;
 
         if (Parser.HookError != null)
@@ -103,6 +114,10 @@ public sealed class Plugin : IDalamudPlugin
     {
         Framework.Update -= OnFrameworkUpdate;
         ClientState.TerritoryChanged -= OnTerritoryChanged;
+        ClientState.Logout -= OnLogout;
+
+        // Un combat en cours à l'arrêt du plugin est enregistré comme les autres.
+        Tracker.EndCurrent(DateTime.UtcNow);
         PluginInterface.UiBuilder.Draw -= WindowSystem.Draw;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUi;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleHud;
@@ -116,6 +131,7 @@ public sealed class Plugin : IDalamudPlugin
         CommandManager.RemoveHandler(LongCommandName);
 
         Parser.Dispose();
+        Store.Dispose();
     }
 
     // ---------------------------------------------------------------- Commande
@@ -134,7 +150,7 @@ public sealed class Plugin : IDalamudPlugin
             case "reset":
             case "clear":
                 ClearAll();
-                Print("Combat en cours et historique effacés.");
+                Print("HUD remis à zéro. Les combats enregistrés sont conservés.");
                 break;
             case "debug":
                 Print(DiagnosticLine());
@@ -168,19 +184,38 @@ public sealed class Plugin : IDalamudPlugin
         UpdateZoneName(territory);
     }
 
+    private void OnLogout(int type, int code) => Tracker.EndCurrent(DateTime.UtcNow);
+
+    /// <summary>En instance, le nom et le type viennent de la mission. Sinon, c'est le lieu en monde ouvert.</summary>
     private void UpdateZoneName(uint territory)
     {
         var row = DataManager.GetExcelSheet<TerritoryType>().GetRowOrDefault(territory);
-        ZoneName = row?.PlaceName.ValueNullable?.Name.ToString() ?? string.Empty;
+        ZoneName = row?.PlaceName.ValueNullable?.Name.ExtractText() ?? string.Empty;
+        ZoneCategory = OpenWorldCategory;
+
+        if (row?.ContentFinderCondition.ValueNullable is not { RowId: not 0 } content)
+            return;
+
+        var duty = content.Name.ExtractText();
+        if (duty.Length > 0)
+            ZoneName = char.ToUpper(duty[0]) + duty[1..];
+
+        var category = content.ContentType.ValueNullable?.Name.ExtractText();
+        if (!string.IsNullOrEmpty(category))
+            ZoneCategory = category;
     }
 
     private void OnEncounterEnded(Encounter encounter)
     {
         Parser.ResetTracking();
+
+        var ended = EncounterView.From(encounter, DateTime.UtcNow);
+        if (Configuration.SaveEncounters && ended.DurationSeconds >= Configuration.MinSaveSeconds)
+            Store.Add(EncounterRecord.From(encounter, ZoneCategory, ZoneName, LocalName, DateTime.UtcNow));
+
         if (!Configuration.ChatSummary)
             return;
 
-        var ended = EncounterView.From(encounter, DateTime.UtcNow);
         var mine = ended.Local is { } local ? $"toi {Formatting.Compact(local.Dps)} DPS ({Formatting.Percent(local.Share)})  |  " : string.Empty;
         Print($"{ended.Title}  |  {Formatting.Duration(ended.DurationSeconds)}  |  {mine}groupe {Formatting.Compact(ended.TotalDps)} DPS");
     }
@@ -193,8 +228,6 @@ public sealed class Plugin : IDalamudPlugin
         Parser.ResetTracking();
         view = null;
     }
-
-    public void ApplyHistorySize() => Tracker.MaxHistory = Configuration.MaxHistory;
 
     public string JobAbbreviation(uint jobId)
     {

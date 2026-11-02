@@ -26,6 +26,15 @@ var tests = new (string Name, Action Run)[]
     ("Partage de DoT : parts égales sans poids", Tests.SplitEqualWithoutWeights),
     ("Partage de DoT : petit tick, beaucoup de joueurs", Tests.SplitSmallAmount),
     ("Table des DoT : effets au sol reconnus", Tests.DotTableKnowsGround),
+    ("Sauvegarde : un combat relu est identique", Tests.StoreRoundTrip),
+    ("Sauvegarde : les accents survivent au rechargement", Tests.StoreKeepsAccents),
+    ("Sauvegarde : un fichier abîmé n'empêche pas de lire les autres", Tests.StoreSkipsCorruptFile),
+    ("Sauvegarde : un combat supprimé ne revient pas", Tests.StoreDeleteIsPermanent),
+    ("Sauvegarde : aucun fichier temporaire ne reste", Tests.StoreLeavesNoTemporaryFile),
+    ("Sauvegarde : un combat ajouté pendant le chargement est gardé", Tests.StoreKeepsRecordAddedBeforeLoad),
+    ("Historique : filtres par type, lieu et personnage", Tests.QueryFilters),
+    ("Historique : tris", Tests.QuerySorts),
+    ("Historique : options de filtre avec leur nombre", Tests.QueryOptions),
     ("Format court des nombres", Tests.CompactFormat),
     ("Format complet des nombres", Tests.FullFormat),
     ("Format des durées", Tests.DurationFormat),
@@ -293,6 +302,191 @@ internal static class Tests
         True(DotTable.IsKnownDot(1871), "Dia connu");
         Near(85, DotTable.WeightOf(1871));
         Near(1, DotTable.WeightOf(999999));
+    }
+
+    private static EncounterRecord Saved(string id, string category, string place, string character, double startOffset, long damage, double seconds, long localDamage = 0)
+    {
+        var encounter = new Encounter(At(startOffset), place);
+        encounter.Add(Direct(1, damage), At(startOffset));
+        encounter.Add(Direct(1, 1), At(startOffset + seconds));
+        if (localDamage > 0)
+            encounter.Add(new Hit(2, character, 25, true, "Boss", "Feu", localDamage), At(startOffset + seconds));
+        encounter.End(At(startOffset + seconds));
+
+        return EncounterRecord.From(encounter, category, place, character, At(startOffset + seconds)) with { Id = id };
+    }
+
+    private static string TemporaryDirectory()
+    {
+        var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "dpsmeter-tests-" + Guid.NewGuid().ToString("N"));
+        System.IO.Directory.CreateDirectory(path);
+        return path;
+    }
+
+    private static EncounterStore Reload(string directory, Action<Exception, string>? onError = null)
+    {
+        var store = new EncounterStore(directory, onError);
+        store.LoadInBackground();
+        True(store.Flush(TimeSpan.FromSeconds(10)), "chargement trop long");
+        True(store.IsLoaded, "chargement non terminé");
+        return store;
+    }
+
+    public static void StoreRoundTrip()
+    {
+        var directory = TemporaryDirectory();
+        var store = Reload(directory);
+
+        var encounter = new Encounter(T0, "Zone");
+        encounter.Add(Direct(1, 1000, crit: true), At(0));
+        encounter.Add(Dot(2, 400, estimated: true), At(10));
+        encounter.Add(Direct(3, 600, local: true, direct: true), At(20));
+        encounter.End(At(25));
+        var record = EncounterRecord.From(encounter, "Donjons", "Sastasha", "Moi", At(25));
+        store.Add(record);
+        store.Dispose();
+
+        var reloaded = Reload(directory);
+        Equal(1, reloaded.Count, "combats");
+        var read = reloaded.All()[0];
+        Equal(record.Id, read.Id, "identifiant");
+        Equal("Donjons", read.Category, "type");
+        Equal("Sastasha", read.Place, "lieu");
+        Equal(EncounterRecord.CurrentFormat, read.FormatVersion, "format");
+        Equal(record.View.StartUtc, read.View.StartUtc, "début");
+        Equal(2000L, read.View.TotalDamage, "total");
+        Near(record.View.TotalDps, read.View.TotalDps);
+        Near(20, read.View.DurationSeconds);
+        True(!read.View.IsActive, "un combat relu est terminé");
+        Equal(3, read.View.Combatants.Count, "combattants");
+        Equal(1u, read.View.Combatants[0].Id, "tri conservé");
+        Equal(3u, read.View.Local!.Id, "ligne du joueur");
+        Equal(400L, read.View.Combatants.Single(c => c.Id == 2).EstimatedDotDamage, "DoT estimés");
+        Equal("Feu", read.View.Combatants[0].TopActions[0].Name, "action");
+        System.IO.Directory.Delete(directory, true);
+    }
+
+    public static void StoreKeepsAccents()
+    {
+        var directory = TemporaryDirectory();
+        var store = Reload(directory);
+        store.Add(Saved("a", "Défis", "Le Palais des Damnés", "Éloïse d'Été", 0, 100, 20));
+        store.Dispose();
+
+        var read = Reload(directory).All()[0];
+        Equal("Défis", read.Category, "type");
+        Equal("Le Palais des Damnés", read.Place, "lieu");
+        Equal("Éloïse d'Été", read.CharacterName, "personnage");
+        System.IO.Directory.Delete(directory, true);
+    }
+
+    public static void StoreSkipsCorruptFile()
+    {
+        var directory = TemporaryDirectory();
+        var store = Reload(directory);
+        store.Add(Saved("bon", "Donjons", "Zone", "Moi", 0, 100, 20));
+        store.Dispose();
+
+        var corrupt = System.IO.Path.Combine(directory, "abime.json");
+        System.IO.File.WriteAllText(corrupt, "{ pas du json");
+        System.IO.File.WriteAllText(System.IO.Path.Combine(directory, "vide.json"), "{}");
+
+        var errors = 0;
+        var reloaded = Reload(directory, (_, _) => errors++);
+        Equal(1, reloaded.Count, "combats lisibles");
+        Equal(2, reloaded.UnreadableFiles, "fichiers illisibles");
+        True(errors >= 1, "l'erreur doit être journalisée");
+        True(System.IO.File.Exists(corrupt), "un fichier abîmé ne doit pas être effacé");
+        System.IO.Directory.Delete(directory, true);
+    }
+
+    public static void StoreDeleteIsPermanent()
+    {
+        var directory = TemporaryDirectory();
+        var store = Reload(directory);
+        store.Add(Saved("a", "Donjons", "Zone", "Moi", 0, 100, 20));
+        store.Add(Saved("b", "Donjons", "Zone", "Moi", 100, 100, 20));
+        store.Add(Saved("c", "Donjons", "Zone", "Moi", 200, 100, 20));
+        var before = store.Version;
+
+        store.Delete(new[] { "a", "c", "inconnu" });
+        Equal(1, store.Count, "supprimés en mémoire");
+        True(store.Version != before, "l'affichage doit être prévenu");
+        store.Dispose();
+
+        var reloaded = Reload(directory);
+        Equal(1, reloaded.Count, "supprimés sur le disque");
+        Equal("b", reloaded.All()[0].Id, "le bon combat reste");
+        System.IO.Directory.Delete(directory, true);
+    }
+
+    public static void StoreLeavesNoTemporaryFile()
+    {
+        var directory = TemporaryDirectory();
+        var store = Reload(directory);
+        store.Add(Saved("a", "Donjons", "Zone", "Moi", 0, 100, 20));
+        store.Dispose();
+        Equal(0, System.IO.Directory.GetFiles(directory, "*.tmp").Length, "fichiers temporaires");
+        Equal(1, System.IO.Directory.GetFiles(directory, "*.json").Length, "fichiers de combat");
+        System.IO.Directory.Delete(directory, true);
+    }
+
+    public static void StoreKeepsRecordAddedBeforeLoad()
+    {
+        var directory = TemporaryDirectory();
+        var first = Reload(directory);
+        first.Add(Saved("ancien", "Donjons", "Zone", "Moi", 0, 100, 20));
+        first.Dispose();
+
+        var store = new EncounterStore(directory);
+        store.Add(Saved("nouveau", "Donjons", "Zone", "Moi", 100, 100, 20));
+        store.LoadInBackground();
+        True(store.Flush(TimeSpan.FromSeconds(10)), "chargement trop long");
+        Equal(2, store.Count, "combats");
+        System.IO.Directory.Delete(directory, true);
+    }
+
+    private static EncounterRecord[] QuerySample() => new[]
+    {
+        Saved("a", "Donjons", "Sastasha", "Moi", 0, 1000, 100, 500),
+        Saved("b", "Donjons", "Tam-Tara", "Moi", 1000, 5000, 100, 100),
+        Saved("c", "Raids", "Arcadion", "Alt", 2000, 9000, 300, 900),
+        Saved("d", "Monde ouvert", "Limsa", "Moi", 3000, 100, 10),
+    };
+
+    private static string Ids(IEnumerable<EncounterRecord> records) => string.Concat(records.Select(r => r.Id));
+
+    public static void QueryFilters()
+    {
+        var all = QuerySample();
+        Equal(4, EncounterQuery.Apply(all, "", "", "", EncounterSort.Newest).Count, "aucun filtre");
+        Equal("ba", Ids(EncounterQuery.Apply(all, "Donjons", "", "", EncounterSort.Newest)), "type");
+        Equal("a", Ids(EncounterQuery.Apply(all, "Donjons", "Sastasha", "", EncounterSort.Newest)), "type et lieu");
+        Equal("c", Ids(EncounterQuery.Apply(all, "", "", "Alt", EncounterSort.Newest)), "personnage");
+        Equal("", Ids(EncounterQuery.Apply(all, "Raids", "Sastasha", "", EncounterSort.Newest)), "filtres sans résultat");
+    }
+
+    public static void QuerySorts()
+    {
+        var all = QuerySample();
+        Equal("dcba", Ids(EncounterQuery.Apply(all, "", "", "", EncounterSort.Newest)), "récents");
+        Equal("abcd", Ids(EncounterQuery.Apply(all, "", "", "", EncounterSort.Oldest)), "anciens");
+        Equal("c", EncounterQuery.Apply(all, "", "", "", EncounterSort.Longest)[0].Id, "plus long");
+        Equal("b", EncounterQuery.Apply(all, "Donjons", "", "", EncounterSort.BestGroupDps)[0].Id, "meilleur groupe");
+
+        // Un combat sans ligne du joueur passe après tous les autres.
+        var byLocal = EncounterQuery.Apply(all, "", "", "", EncounterSort.BestLocalDps);
+        Equal("a", byLocal[0].Id, "mon meilleur DPS");
+        Equal("d", byLocal[3].Id, "sans moi en dernier");
+    }
+
+    public static void QueryOptions()
+    {
+        var options = EncounterQuery.Options(QuerySample(), r => r.Category);
+        Equal(3, options.Count, "types");
+        Equal("Donjons", options[0].Value, "ordre");
+        Equal(2, options[0].Count, "nombre");
+        Equal(0, EncounterQuery.Options(new[] { Saved("x", "", "", "", 0, 1, 10) }, r => r.Category).Count, "valeur vide ignorée");
     }
 
     public static void CompactFormat()

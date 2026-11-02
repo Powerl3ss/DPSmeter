@@ -377,7 +377,7 @@ public sealed class HudWindow : Window, IDisposable
         if (plugin.Tracker.IsActive && ImGui.MenuItem("Terminer le combat"))
             plugin.Tracker.EndCurrent(DateTime.UtcNow);
 
-        if (ImGui.MenuItem("Tout effacer"))
+        if (ImGui.MenuItem("Remettre à zéro"))
             plugin.ClearAll();
 
         ImGui.Separator();

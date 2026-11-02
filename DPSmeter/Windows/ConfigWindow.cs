@@ -37,10 +37,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
     private Page page = Page.Home;
     private int displaySection;
 
-    // Page Historique : le combat choisi, et sa photo (un combat terminé ne change plus).
-    private Encounter? selectedEncounter;
-    private EncounterView? selectedView;
-
     // Styles de fenêtre poussés avant Begin (PreDraw) et retirés après End (PostDraw).
     private IDisposable? windowStyle;
     private IDisposable? windowColors;
@@ -456,11 +452,11 @@ public sealed partial class ConfigWindow : Window, IDisposable
             return;
 
         ImGui.SameLine();
-        if (FancyButton("##homeClear", "Tout effacer", FontAwesomeIcon.Trash, ButtonSize("Tout effacer", FontAwesomeIcon.Trash), primary: false, danger: true) &&
+        if (FancyButton("##homeClear", "Remettre à zéro", FontAwesomeIcon.Undo, ButtonSize("Remettre à zéro", FontAwesomeIcon.Undo), primary: false, danger: true) &&
             ImGui.GetIO().KeyCtrl)
             plugin.ClearAll();
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Ctrl + clic : efface le combat en cours et l'historique");
+            ImGui.SetTooltip("Ctrl + clic : remet le HUD à zéro. Les combats enregistrés sont conservés.");
     }
 
     private void StatCard(FontAwesomeIcon icon, string title, string value, string caption)
@@ -533,52 +529,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
                     ImGui.SetTooltip(Formatting.Tooltip(row, shown, job));
             }
         });
-    }
-
-    // =================================================================== Historique
-
-    private void DrawHistoryPage()
-    {
-        var history = plugin.Tracker.History;
-        Hero("Historique", "Les combats de cette session. Ils sont oubliés à la fermeture du jeu.",
-             history.Length > 0 ? $"{history.Length} combat(s)" : null);
-
-        if (history.Length == 0)
-        {
-            Card(() =>
-            {
-                IconText(FontAwesomeIcon.History, TextDim);
-                ImGui.SameLine();
-                ImGui.TextUnformatted("Aucun combat terminé pour l'instant.");
-            });
-            return;
-        }
-
-        var now = DateTime.UtcNow;
-        if (selectedEncounter != null && !history.Contains(selectedEncounter))
-        {
-            selectedEncounter = null;
-            selectedView = null;
-        }
-
-        for (var i = 0; i < history.Length; i++)
-        {
-            var encounter = history[i];
-            var isSelected = ReferenceEquals(encounter, selectedEncounter);
-            var subtitle = $"{encounter.StartUtc.ToLocalTime():HH:mm}  |  {Formatting.Duration(encounter.DurationSeconds(now))}  |  {Formatting.Compact(encounter.TotalDamage / encounter.DurationSeconds(now))} DPS du groupe";
-            if (OptionCard($"##encounter{i}", FontAwesomeIcon.Fire, encounter.Title, subtitle, isSelected, pageWidth))
-            {
-                selectedEncounter = isSelected ? null : encounter;
-                selectedView = selectedEncounter == null ? null : plugin.Tracker.BuildView(selectedEncounter, now);
-            }
-
-            if (isSelected && selectedView != null)
-            {
-                ImGui.Dummy(new Vector2(0, 2f * S));
-                DrawCombatantTable(selectedView);
-            }
-            ImGui.Dummy(new Vector2(0, 2f * S));
-        }
     }
 
     // =================================================================== Affichage
@@ -707,11 +657,9 @@ public sealed partial class ConfigWindow : Window, IDisposable
         SectionTitle("Historique");
         Card(() =>
         {
-            if (SliderIntRow("Combats gardés", "Seulement pendant la session de jeu.", Cfg.MaxHistory, 1, 100, v => Cfg.MaxHistory = v))
-            {
-                plugin.ApplyHistorySize();
-                changed = true;
-            }
+            changed |= ToggleRow("Enregistrer les combats", "Sur ton PC, sans limite de temps. Seule la page Historique les supprime.", Cfg.SaveEncounters, v => Cfg.SaveEncounters = v);
+            using (ImRaii.Disabled(!Cfg.SaveEncounters))
+                changed |= SliderIntRow("Durée minimale", "En secondes. Les combats plus courts ne sont pas enregistrés.", Cfg.MinSaveSeconds, 0, 120, v => Cfg.MinSaveSeconds = v);
             changed |= ToggleRow("Résumé dans le chat", "Message en fin de combat. Il n'est visible que par toi.", Cfg.ChatSummary, v => Cfg.ChatSummary = v);
         });
 
@@ -760,7 +708,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
             CommandRow("/dps", "Affiche ou masque le HUD");
             CommandRow("/dps config", "Ouvre ces réglages");
             CommandRow("/dps end", "Termine le combat en cours");
-            CommandRow("/dps reset", "Efface le combat en cours et l'historique");
+            CommandRow("/dps reset", "Remet le HUD à zéro (les combats enregistrés sont conservés)");
             CommandRow("/dps debug", "Affiche les compteurs de diagnostic dans le chat");
         });
 

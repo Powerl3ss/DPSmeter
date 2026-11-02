@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json.Serialization;
 
 namespace DPSmeter.Core;
 
@@ -35,9 +36,11 @@ public sealed record EncounterView(
 {
     private const int MaxActionsShown = 6;
 
+    [JsonIgnore]
     public CombatantView? Local => Combatants.FirstOrDefault(c => c.IsLocal);
 
     /// <summary>Plus gros total du combat : les barres sont dessinées par rapport à lui.</summary>
+    [JsonIgnore]
     public long TopDamage => Combatants.Count > 0 ? Combatants[0].Damage : 0;
 
     public static EncounterView From(Encounter encounter, DateTime nowUtc)
