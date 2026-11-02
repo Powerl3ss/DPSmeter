@@ -508,7 +508,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
                     changed |= ToggleRow("Verrouiller la position", "Empêche de déplacer le HUD par erreur.", Cfg.HudLocked, v => Cfg.HudLocked = v);
                     using (ImRaii.Disabled(!Cfg.HudLocked))
                         changed |= ToggleRow("Clics traversants", "Les clics passent à travers le HUD (demande une position verrouillée).", Cfg.ClickThrough, v => Cfg.ClickThrough = v);
-                    changed |= ToggleRow("HUD replié", "Ne montre que la ligne de titre. Clic sur le titre du HUD, ou clic droit > Déplier, pour le rouvrir.", Cfg.HudCollapsed, v => Cfg.HudCollapsed = v);
+                    changed |= ToggleRow("HUD replié", "Ne montre que la ligne de titre. Clic sur le titre du HUD pour le rouvrir.", Cfg.HudCollapsed, v => Cfg.HudCollapsed = v);
                 });
 
                 SectionTitle("Contenu des barres");

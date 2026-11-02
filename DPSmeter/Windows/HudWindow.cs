@@ -479,9 +479,6 @@ public sealed class HudWindow : Window, IDisposable
         if (ImGui.MenuItem(Cfg.HudLocked ? "Déverrouiller la position" : "Verrouiller la position"))
             Toggle(c => c.HudLocked = !c.HudLocked);
 
-        if (ImGui.MenuItem(Cfg.HudCollapsed ? "Déplier le HUD" : "Replier le HUD"))
-            Toggle(c => c.HudCollapsed = !c.HudCollapsed);
-
         ImGui.Separator();
 
         if (ImGui.MenuItem("Masquer le HUD (/dps pour le réafficher)"))
