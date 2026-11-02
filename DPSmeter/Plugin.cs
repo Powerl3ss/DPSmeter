@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using Dalamud.Game.ClientState.Conditions;
+using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Game.Command;
 using Dalamud.Game.DutyState;
 using Dalamud.Interface.Windowing;
@@ -58,6 +59,7 @@ public sealed class Plugin : IDalamudPlugin
     private DateTime lastCombatUtc = DateTime.MinValue;
     private EncounterView? view;
     private (Encounter Encounter, EncounterRecord Record)? lastSaved;
+    private readonly HashSet<uint> deadNow = new();
 
     /// <summary>Aperçu du HUD avec de faux chiffres (réglages), pour le placer sans se battre.</summary>
     public bool PreviewMode { get; set; }
@@ -191,6 +193,7 @@ public sealed class Plugin : IDalamudPlugin
         Tracker.RecentWindowSeconds = Configuration.RecentWindowSeconds;
         Tracker.Update(now, inCombat, Math.Max(1, Configuration.EndDelaySeconds));
         view = Tracker.BuildView(Tracker.Displayed, now);
+        RefreshDeadPlayers();
     }
 
     private void OnTerritoryChanged(uint territory)
@@ -271,6 +274,23 @@ public sealed class Plugin : IDalamudPlugin
         Tracker.Clear();
         Parser.ResetTracking();
         view = null;
+    }
+
+    /// <summary>Ce joueur est-il mort en ce moment ? (l'aperçu du HUD s'appuie sur ses faux chiffres)</summary>
+    public bool IsDeadNow(CombatantView row) => PreviewMode ? row.Deaths > 0 : deadNow.Contains(row.Id);
+
+    /// <summary>Lit l'état réel des joueurs du tableau : mort, ou de nouveau en vie après une résurrection.</summary>
+    private void RefreshDeadPlayers()
+    {
+        deadNow.Clear();
+        if (view == null)
+            return;
+
+        foreach (var row in view.Combatants)
+        {
+            if (ObjectTable.SearchByEntityId(row.Id) is IBattleChara { CurrentHp: 0 } or IBattleChara { IsDead: true })
+                deadNow.Add(row.Id);
+        }
     }
 
     public string JobAbbreviation(uint jobId)

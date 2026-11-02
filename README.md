@@ -18,7 +18,7 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 **Le HUD**
 - Une barre par joueur, du plus gros DPS au plus petit, à la couleur de son job.
 - DPS moyen, DPS des dernières secondes en combat, part des dégâts et, en option, dégâts totaux. Ta ligne est soulignée et reste visible même au-delà de la limite de lignes.
-- Trois mesures au choix : dégâts, soins ou dégâts subis. Les morts sont signalées sur la barre.
+- Trois mesures au choix : dégâts, soins ou dégâts subis. Une tête de mort s'affiche sur la barre d'un joueur tant qu'il est mort.
 - Au survol : dégâts, taux de critiques et de coups directs, part des DoT, meilleures actions.
 - Durée du combat et DPS du groupe dans l'en-tête.
 - Largeur, taille du texte, opacité, couleurs, position verrouillable, clics traversants.

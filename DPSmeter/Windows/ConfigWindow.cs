@@ -531,7 +531,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
                         }
                     }, FrameH + 20f * S);
                     changed |= ToggleRow("DPS récent", "En combat, le DPS des dernières secondes s'ajoute à la moyenne. La durée se règle dans l'onglet Mesure.", Cfg.ShowRecentDps, v => Cfg.ShowRecentDps = v);
-                    changed |= ToggleRow("Morts", "Une tête de mort sur la barre des joueurs tombés.", Cfg.ShowDeaths, v => Cfg.ShowDeaths = v);
+                    changed |= ToggleRow("Morts", "Une tête de mort sur la barre d'un joueur, tant qu'il est mort.", Cfg.ShowDeaths, v => Cfg.ShowDeaths = v);
                     changed |= ToggleRow("Part des dégâts", "Le pourcentage à droite de chaque barre.", Cfg.ShowPercent, v => Cfg.ShowPercent = v);
                     changed |= ToggleRow("Dégâts totaux", "Le total, en plus du DPS.", Cfg.ShowTotalDamage, v => Cfg.ShowTotalDamage = v);
                     changed |= ToggleRow("Masquer le nom des autres", "Affiche leur job à la place, pratique pour une capture d'écran.", Cfg.HideOtherNames, v => Cfg.HideOtherNames = v);

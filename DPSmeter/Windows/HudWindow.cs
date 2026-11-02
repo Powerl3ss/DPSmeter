@@ -291,8 +291,8 @@ public sealed class HudWindow : Window, IDisposable
         DrawText(new Vector2(max.X - pad - rightW, textY), white, right);
 
         var nameEnd = max.X - pad * 2f - rightW;
-        if (Cfg.ShowDeaths && row.Deaths > 0)
-            nameEnd = DrawDeaths(row.Deaths, nameEnd, textY, pad);
+        if (Cfg.ShowDeaths && plugin.IsDeadNow(row))
+            nameEnd = DrawDeathIcon(nameEnd, min.Y, height, pad);
 
         var name = plugin.DisplayName(row);
         drawList.PushClipRect(new Vector2(nameX, min.Y), new Vector2(nameEnd, max.Y), true);
@@ -303,23 +303,38 @@ public sealed class HudWindow : Window, IDisposable
             ImGui.SetTooltip(Formatting.Tooltip(row, name, plugin.JobAbbreviation(row.JobId), view.DurationSeconds, Cfg.RecentWindowSeconds));
     }
 
-    /// <summary>Tête de mort (avec le nombre s'il y en a plusieurs), à gauche des valeurs. Renvoie la nouvelle limite du nom.</summary>
-    private float DrawDeaths(int deaths, float right, float textY, float pad)
+    /// <summary>
+    /// Tête de mort à gauche des valeurs, tant que le joueur est mort. Sa taille est calculée d'après le
+    /// dessin réel de l'icône : elle reste centrée dans la ligne sans en dépasser. Renvoie la nouvelle limite du nom.
+    /// </summary>
+    private unsafe float DrawDeathIcon(float right, float rowTop, float rowHeight, float pad)
     {
-        var red = new Vector4(1f, 0.47f, 0.47f, 1f);
-        var count = deaths > 1 ? deaths.ToString() : string.Empty;
-        var countWidth = count.Length > 0 ? ImGui.CalcTextSize(count).X + pad * 0.5f : 0f;
-        if (count.Length > 0)
-            DrawText(new Vector2(right - countWidth + pad * 0.5f, textY), red, count);
+        const char Skull = (char)FontAwesomeIcon.Skull;
+        const float HeightInRow = 0.70f;
 
-        var icon = FontAwesomeIcon.Skull.ToIconString();
+        var textScale = Math.Clamp(Cfg.HudScale, 0.6f, 2f);
+        var icon = Skull.ToString();
+        var x = right;
+
         using (ImRaii.PushFont(UiBuilder.IconFont))
         {
-            var iconWidth = ImGui.CalcTextSize(icon).X;
-            var x = right - countWidth - iconWidth;
-            DrawText(new Vector2(x, textY), red, icon);
-            return x - pad;
+            var font = ImGui.GetFont();
+            var glyph = font.FindGlyph(Skull);
+            if (glyph != null && glyph->Y1 > glyph->Y0 && font.FontSize > 0f)
+            {
+                // Taille pour que l'icône occupe la hauteur voulue, puis position de son haut réel.
+                var drawnScale = rowHeight * HeightInRow / (glyph->Y1 - glyph->Y0);
+                ImGui.SetWindowFontScale(textScale * drawnScale / (ImGui.GetFontSize() / font.FontSize));
+                var scale = ImGui.GetFontSize() / font.FontSize;
+                var top = rowTop + (rowHeight - (glyph->Y1 - glyph->Y0) * scale) / 2f - glyph->Y0 * scale;
+
+                x = right - ImGui.CalcTextSize(icon).X;
+                DrawText(new Vector2(x, top), new Vector4(1f, 0.47f, 0.47f, 1f), icon);
+                ImGui.SetWindowFontScale(textScale);
+            }
         }
+
+        return x - pad;
     }
 
     private string RightText(EncounterView view, CombatantView row)
