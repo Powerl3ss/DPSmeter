@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project Sdk="Dalamud.NET.Sdk/15.0.0">
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+    <!-- Champs du manifeste affichés dans /xlplugins -->
+    <Author>Powerl3ss</Author>
+    <Name>DPSmeter</Name>
+    <!-- Exigée par DalamudPackager, puis vidée par la GitHub Action pour n'afficher que la ligne des commandes. -->
+    <Description>DPSmeter</Description>
+    <Punchline>Tes dégâts et ceux de ton groupe en direct, dans un HUD configurable.</Punchline>
+    <RepoUrl>https://github.com/Powerl3ss/DPSmeter</RepoUrl>
+    <Tags>dps;meter;damage;combat;hud</Tags>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <IconUrl>https://raw.githubusercontent.com/Powerl3ss/DPSmeter/main/DPSmeter/images/icon.png</IconUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="images\icon.png" LogicalName="DPSmeter.icon.png" />
+    <Content Include="images\icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </Content>
+  </ItemGroup>
+</Project>

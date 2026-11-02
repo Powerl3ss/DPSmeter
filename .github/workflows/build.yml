@@ -1,0 +1,118 @@
+name: Build & Release
+
+# Compile le plugin à chaque push.
+# Si la <Version> du .csproj n'a pas encore de release, une release vX.Y.Z est créée
+# automatiquement et repo.json (le dépôt custom lu par Dalamud) est mis à jour.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v5
+
+    - name: Install .NET
+      uses: actions/setup-dotnet@v5
+      with:
+        dotnet-version: 10.0.x
+
+    - name: Download Dalamud
+      run: |
+        Invoke-WebRequest -Uri https://goatcorp.github.io/dalamud-distrib/latest.zip -OutFile latest.zip
+        Expand-Archive -Force latest.zip "$env:AppData\XIVLauncher\addon\Hooks\dev"
+
+    - name: Read version
+      id: version
+      shell: pwsh
+      run: |
+        [xml]$proj = Get-Content .\DPSmeter\DPSmeter.csproj
+        $v = ($proj.Project.PropertyGroup | Where-Object { $_.Version } | Select-Object -First 1).Version
+        $tag = "v$v"
+        $exists = git ls-remote --tags origin "refs/tags/$tag"
+        $isMain = ($env:GITHUB_EVENT_NAME -ne 'pull_request') -and ($env:GITHUB_REF -eq 'refs/heads/main')
+        $release = $isMain -and [string]::IsNullOrWhiteSpace($exists)
+        "version=$v" >> $env:GITHUB_OUTPUT
+        "tag=$tag" >> $env:GITHUB_OUTPUT
+        "release=$($release.ToString().ToLower())" >> $env:GITHUB_OUTPUT
+        Write-Host "Version $v - release: $release"
+
+    # La logique de calcul (DPS, durée des combats, partage des DoT) est testée sans le jeu.
+    - name: Run logic tests
+      run: dotnet run --project .\Tests\DPSmeter.Tests\DPSmeter.Tests.csproj --configuration Release
+
+    - name: Build
+      run: dotnet build .\DPSmeter.slnx --configuration Release
+
+    # La description est obligatoire pour compiler, mais on la vide dans le plugin publié :
+    # Dalamud n'affiche alors que la ligne des commandes.
+    - name: Clear plugin description
+      shell: pwsh
+      run: |
+        $out = ".\DPSmeter\bin\x64\Release\DPSmeter"
+        $tmp = Join-Path $env:RUNNER_TEMP "pkg"
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+        Expand-Archive "$out\latest.zip" $tmp -Force
+
+        $manifest = Get-Content "$tmp\DPSmeter.json" -Raw | ConvertFrom-Json
+        $manifest.Description = ""
+        $json = $manifest | ConvertTo-Json -Depth 10
+        Set-Content "$tmp\DPSmeter.json" $json -Encoding utf8
+        Set-Content "$out\DPSmeter.json" $json -Encoding utf8
+
+        Remove-Item "$out\latest.zip"
+        Compress-Archive "$tmp\*" "$out\latest.zip"
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: DPSmeter
+        path: .\DPSmeter\bin\x64\Release\DPSmeter\*
+        if-no-files-found: error
+        retention-days: 7
+
+    # ---- Seulement quand la version n'a pas encore de release ----
+
+    - name: Create GitHub release
+      if: steps.version.outputs.release == 'true'
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ steps.version.outputs.tag }}
+        name: DPSmeter ${{ steps.version.outputs.tag }}
+        target_commitish: ${{ github.sha }}
+        files: .\DPSmeter\bin\x64\Release\DPSmeter\latest.zip
+        generate_release_notes: true
+        make_latest: true
+
+    - name: Update repo.json (custom Dalamud repository)
+      if: steps.version.outputs.release == 'true'
+      shell: pwsh
+      run: |
+        git config user.name  "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git fetch origin main
+        git checkout -B main origin/main
+
+        $manifest = Get-Content .\DPSmeter\bin\x64\Release\DPSmeter\DPSmeter.json -Raw | ConvertFrom-Json
+        $download = "https://github.com/${{ github.repository }}/releases/latest/download/latest.zip"
+        $manifest | Add-Member -Force NoteProperty DownloadLinkInstall $download
+        $manifest | Add-Member -Force NoteProperty DownloadLinkTesting $download
+        $manifest | Add-Member -Force NoteProperty DownloadLinkUpdate  $download
+        $manifest | Add-Member -Force NoteProperty IconUrl "https://raw.githubusercontent.com/${{ github.repository }}/main/DPSmeter/images/icon.png"
+        $manifest | Add-Member -Force NoteProperty IsHide $false
+        $manifest | Add-Member -Force NoteProperty IsTestingExclusive $false
+        $manifest | Add-Member -Force NoteProperty LastUpdate ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())
+        ConvertTo-Json -InputObject @($manifest) -Depth 10 | Set-Content repo.json -Encoding utf8
+
+        git add repo.json
+        git commit -m "Update repo.json for ${{ steps.version.outputs.tag }} [skip ci]"
+        git push origin main

@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="DPSmeter/DPSmeter.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>

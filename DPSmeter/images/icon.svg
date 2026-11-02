@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#18283F"/>
+      <stop offset="1" stop-color="#0A111C"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.55" r="0.5">
+      <stop offset="0" stop-color="#4DA6FF" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#4DA6FF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bar" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#2F86E8"/>
+      <stop offset="1" stop-color="#63B5FF"/>
+    </linearGradient>
+    <linearGradient id="top" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#E6EDF6"/>
+      <stop offset="1" stop-color="#FFFFFF"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+
+  <!-- Fond -->
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect x="2" y="2" width="508" height="508" rx="110" fill="none" stroke="#4DA6FF" stroke-opacity="0.25" stroke-width="4"/>
+  <circle cx="256" cy="280" r="250" fill="url(#glow)"/>
+
+  <!-- Pistes des barres -->
+  <g fill="#FFFFFF" fill-opacity="0.08">
+    <rect x="96" y="112" width="320" height="60" rx="18"/>
+    <rect x="96" y="194" width="320" height="60" rx="18"/>
+    <rect x="96" y="276" width="320" height="60" rx="18"/>
+    <rect x="96" y="358" width="320" height="60" rx="18"/>
+  </g>
+
+  <!-- Barres du meter, de la plus forte à la plus faible -->
+  <g filter="url(#shadow)">
+    <rect x="96" y="112" width="320" height="60" rx="18" fill="url(#top)"/>
+    <rect x="96" y="194" width="256" height="60" rx="18" fill="url(#bar)"/>
+    <rect x="96" y="276" width="196" height="60" rx="18" fill="url(#bar)" fill-opacity="0.85"/>
+    <rect x="96" y="358" width="124" height="60" rx="18" fill="url(#bar)" fill-opacity="0.65"/>
+  </g>
+</svg>
