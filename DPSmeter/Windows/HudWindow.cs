@@ -94,8 +94,7 @@ public sealed class HudWindow : Window, IDisposable
         var width = Math.Clamp(Cfg.HudWidth, 160f, 700f) * ImGuiHelpers.GlobalScale * textScale;
         var view = plugin.View;
 
-        if (!Cfg.CompactMode || Cfg.HudCollapsed)
-            DrawHeader(view, width, textScale);
+        DrawHeader(view, width, textScale);
 
         if (!Cfg.HudCollapsed)
         {
@@ -388,9 +387,6 @@ public sealed class HudWindow : Window, IDisposable
 
         if (ImGui.MenuItem(Cfg.HudCollapsed ? "Déplier le HUD" : "Replier le HUD"))
             Toggle(c => c.HudCollapsed = !c.HudCollapsed);
-
-        if (ImGui.MenuItem(Cfg.CompactMode ? "Quitter le mode compact" : "Mode compact"))
-            Toggle(c => c.CompactMode = !c.CompactMode);
 
         ImGui.Separator();
 

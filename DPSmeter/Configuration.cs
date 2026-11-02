@@ -25,7 +25,6 @@ public class Configuration : IPluginConfiguration
     public float HudOpacity { get; set; } = 0.65f;
     public float HudScale { get; set; } = 1.0f;
     public float HudWidth { get; set; } = 300f;
-    public bool CompactMode { get; set; } = false;
     public bool HudCollapsed { get; set; } = false;
 
     // --- Contenu du HUD ---

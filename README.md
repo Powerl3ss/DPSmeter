@@ -20,7 +20,7 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 - DPS, part des dégâts et, en option, dégâts totaux. Ta ligne est soulignée et reste visible même au-delà de la limite de lignes.
 - Au survol : dégâts, taux de critiques et de coups directs, part des DoT, meilleures actions.
 - Durée du combat et DPS du groupe dans l'en-tête.
-- Largeur, taille du texte, opacité, couleurs, mode compact, position verrouillable, clics traversants.
+- Largeur, taille du texte, opacité, couleurs, position verrouillable, clics traversants.
 - Masquage automatique hors combat ou hors instance.
 - Aperçu avec de faux chiffres pour le placer sans se battre.
 - Clic droit : menu rapide.

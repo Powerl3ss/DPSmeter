@@ -611,7 +611,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
                     using (ImRaii.Disabled(!Cfg.HudLocked))
                         changed |= ToggleRow("Clics traversants", "Les clics passent à travers le HUD (demande une position verrouillée).", Cfg.ClickThrough, v => Cfg.ClickThrough = v);
                     changed |= ToggleRow("HUD replié", "Ne montre que la ligne de titre. Clic sur le titre du HUD, ou clic droit > Déplier, pour le rouvrir.", Cfg.HudCollapsed, v => Cfg.HudCollapsed = v);
-                    changed |= ToggleRow("Mode compact", "Sans la ligne de titre.", Cfg.CompactMode, v => Cfg.CompactMode = v);
                 });
 
                 SectionTitle("Contenu des barres");
@@ -769,7 +768,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
         {
             CardLabel("Astuces");
             TextDimmed("Survole une barre du HUD : détail du joueur et de ses meilleures actions.");
-            TextDimmed("Clic droit sur le HUD : menu rapide (terminer le combat, verrouiller, mode compact...).");
+            TextDimmed("Clic droit sur le HUD : menu rapide (terminer le combat, verrouiller, replier...).");
             TextDimmed("Clic sur le titre du HUD : le replier ou le déplier.");
         });
 
