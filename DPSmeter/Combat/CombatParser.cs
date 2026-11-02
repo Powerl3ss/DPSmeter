@@ -214,7 +214,8 @@ public sealed unsafe class CombatParser : IDisposable
                           recipient?.Name.TextValue ?? string.Empty,
                           actionName, amount, isCrit, isDirectHit,
                           TargetId: recipientId, TargetHp: HpOf(recipient));
-        tracker.Record(hit, DateTime.UtcNow, plugin.ZoneName);
+        if (!plugin.IsDutyOver)
+            tracker.Record(hit, DateTime.UtcNow, plugin.ZoneName, plugin.IsDutyWideMode);
     }
 
     private void ReadHeal(uint healerId, uint recipientId, long amount, string actionName, bool isCrit)
@@ -232,14 +233,19 @@ public sealed unsafe class CombatParser : IDisposable
     private static float HpOf(IGameObject? target) =>
         target is IBattleChara { MaxHp: > 0 } battle ? battle.CurrentHp / (float)battle.MaxHp : -1f;
 
-    /// <summary>Relit les PV de la cible principale : les paquets arrivent un peu avant que les dégâts soient appliqués.</summary>
-    public void PollMainTarget()
+    /// <summary>Relit les PV des cibles suivies : les paquets arrivent un peu avant que les dégâts soient appliqués.</summary>
+    public void PollTargets()
     {
-        var id = tracker.MainTargetId;
-        if (id == 0)
-            return;
+        PollTarget(tracker.MainTargetId);
 
-        if (Plugin.ObjectTable.SearchByEntityId(id) is IBattleChara { MaxHp: > 0 } target)
+        var last = tracker.LastTargetId;
+        if (last != tracker.MainTargetId)
+            PollTarget(last);
+    }
+
+    private void PollTarget(uint id)
+    {
+        if (id != 0 && Plugin.ObjectTable.SearchByEntityId(id) is IBattleChara { MaxHp: > 0 } target)
             tracker.UpdateTargetHp(id, target.IsDead ? 0f : target.CurrentHp / (float)target.MaxHp);
     }
 

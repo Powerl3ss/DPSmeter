@@ -193,11 +193,16 @@ public sealed class Encounter
     private readonly Dictionary<string, long> damageByTarget = new();
     private readonly Dictionary<uint, TargetState> targets = new();
     private Outcome markedOutcome;
+    private uint lastTargetId;
 
     public DateTime StartUtc { get; }
     public DateTime LastDamageUtc { get; private set; }
     public DateTime? EndUtc { get; private set; }
     public string ZoneName { get; }
+
+    /// <summary>Combat couvrant toute une instance : il ne s'arrête qu'à un wipe, à la fin de l'instance ou à sa sortie.</summary>
+    public bool IsDutyWide { get; }
+
     public long TotalDamage { get; private set; }
     public long TotalHealing { get; private set; }
     public long TotalDamageTaken { get; private set; }
@@ -211,18 +216,22 @@ public sealed class Encounter
     public IEnumerable<Combatant> Combatants => combatants.Values;
     public int CombatantCount => combatants.Count;
 
-    public Encounter(DateTime startUtc, string zoneName)
+    public Encounter(DateTime startUtc, string zoneName, bool isDutyWide = false)
     {
         StartUtc = startUtc;
         LastDamageUtc = startUtc;
         ZoneName = zoneName;
+        IsDutyWide = isDutyWide;
     }
 
-    /// <summary>La cible qui a encaissé le plus de dégâts donne son nom au combat.</summary>
+    /// <summary>Le nom de l'instance, sinon la cible qui a encaissé le plus de dégâts.</summary>
     public string Title
     {
         get
         {
+            if (IsDutyWide && !string.IsNullOrEmpty(ZoneName))
+                return ZoneName;
+
             var best = damageByTarget.Where(t => t.Key.Length > 0).OrderByDescending(t => t.Value).FirstOrDefault();
             if (!string.IsNullOrEmpty(best.Key))
                 return best.Key;
@@ -248,6 +257,9 @@ public sealed class Encounter
             return best;
         }
     }
+
+    /// <summary>La dernière cible touchée (0 si aucune n'est connue).</summary>
+    public uint LastTargetId => lastTargetId;
 
     /// <summary>En cours : jusqu'à maintenant. Terminé : jusqu'au dernier coup, sans le temps d'attente de fin de combat.</summary>
     public double DurationSeconds(DateTime nowUtc)
@@ -275,6 +287,7 @@ public sealed class Encounter
             if (!targets.TryGetValue(hit.TargetId, out var target))
                 targets[hit.TargetId] = target = new TargetState();
             target.Damage += hit.Amount;
+            lastTargetId = hit.TargetId;
             if (hit.TargetHp >= 0f)
                 target.LastHp = hit.TargetHp;
         }
@@ -340,7 +353,17 @@ public sealed class Encounter
         if (markedOutcome != Outcome.Unknown)
         {
             Outcome = markedOutcome;
-            RemainingHp = Outcome == Outcome.Failure && main is { LastHp: >= 0f } ? main.LastHp : -1f;
+
+            // Après un wipe, la cible qui compte est celle qu'on combattait, pas la plus touchée de toute l'instance.
+            if (Outcome == Outcome.Failure && targets.TryGetValue(lastTargetId, out var last) && !last.IsDead && last.LastHp > 0f)
+                RemainingHp = last.LastHp;
+            return;
+        }
+
+        // Instance quittée sans que le jeu annonce sa fin : ni victoire, ni wipe.
+        if (IsDutyWide)
+        {
+            Outcome = Outcome.Interrupted;
             return;
         }
 

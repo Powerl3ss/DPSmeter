@@ -332,13 +332,13 @@ public sealed partial class ConfigWindow
     }
 
     /// <summary>Issue du combat, alignée à droite. Renvoie la largeur occupée.</summary>
-    private float DrawOutcome(EncounterView view, Vector2 topRight)
+    private float DrawOutcome(EncounterRecord record, Vector2 topRight)
     {
-        var text = Formatting.OutcomeText(view.Outcome, view.RemainingHp);
+        var text = Formatting.RecordOutcomeText(record);
         if (text.Length == 0)
             return 0f;
 
-        var color = view.Outcome switch
+        var color = record.View.Outcome switch
         {
             Outcome.Victory => Success,
             Outcome.Failure => Danger,
@@ -418,13 +418,18 @@ public sealed partial class ConfigWindow
         drawList.AddText(new Vector2(titleX, top), Col(TextMain), view.Title);
         drawList.PopClipRect();
 
-        var details = $"{record.Category}  |  {record.Place}  |  {Formatting.Duration(view.DurationSeconds)}  |  groupe {Formatting.Compact(view.TotalDps)}";
+        // Du plus utile au moins utile : si la place manque, c'est la fin qui est coupée.
+        var details = $"{Formatting.Duration(view.DurationSeconds)}  |  {Formatting.Compact(view.TotalDamage)} dégâts  |  groupe {Formatting.Compact(view.TotalDps)}";
         if (view.Local is { } local)
         {
             var job = plugin.JobAbbreviation(local.JobId);
             details += job.Length > 0 ? $"  |  toi {Formatting.Compact(local.Dps)} ({job})" : $"  |  toi {Formatting.Compact(local.Dps)}";
         }
-        var outcomeWidth = DrawOutcome(record.View, new Vector2(textMax.X, top + lineH + 4f * S));
+        details += $"  |  {record.Category}";
+        if (record.Place != view.Title)
+            details += $"  |  {record.Place}";
+
+        var outcomeWidth = DrawOutcome(record, new Vector2(textMax.X, top + lineH + 4f * S));
         drawList.PushClipRect(textMin, new Vector2(textMax.X - outcomeWidth - pad, textMax.Y), true);
         drawList.AddText(new Vector2(textMin.X, top + lineH + 4f * S), Col(TextDim), details);
         drawList.PopClipRect();

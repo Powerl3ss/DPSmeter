@@ -44,7 +44,7 @@ public sealed partial class ConfigWindow
     private void DrawRecordsPage()
     {
         RefreshBests();
-        Hero("Records", "Ton meilleur DPS par adversaire, job et personnage.",
+        Hero("Records", "Ton meilleur DPS par instance ou adversaire, job et personnage.",
              personalBests.Count > 0 ? $"{personalBests.Count} record(s)" : null);
 
         if (!plugin.Store.IsLoaded)

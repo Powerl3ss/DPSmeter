@@ -27,7 +27,8 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 - Clic droit : menu rapide.
 
 **La mesure**
-- Démarre au premier coup porté, s'arrête toute seule à la sortie de combat.
+- En instance : un seul combat, du premier coup jusqu'à la sortie, sans se couper. À chaque wipe, le combat est enregistré et le compteur repart de zéro (réglable).
+- Hors instance : démarre au premier coup porté, s'arrête tout seul à la sortie de combat.
 - Au choix : toi seul, ton groupe (PNJ de soutien compris), ton alliance, ou tous les joueurs autour de toi.
 - Familiers ajoutés à leur maître, Transcendance sur sa propre ligne (les deux sont réglables).
 - Ripostes des tanks et ticks de DoT comptés.
@@ -36,8 +37,8 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 - Combats enregistrés sur ton PC, retrouvables d'une session à l'autre, sans limite de temps.
 - Page Historique : filtres par type de contenu (donjons, défis, raids...), lieu, job, issue et personnage, tri par date, DPS ou durée.
 - Détail de chaque combat : tableau des joueurs, courbe de DPS avec les morts, toutes les actions et tous les soins de chaque joueur.
-- Issue de chaque combat : victoire, échec avec les PV restants de la cible, ou interrompu.
-- Page Records : ton meilleur DPS par adversaire, job et personnage, ta progression, et un message quand tu bats un record.
+- Issue de chaque combat : victoire, wipe numéroté avec ses dégâts et les PV restants de la cible, échec ou interrompu.
+- Page Records : ton meilleur DPS par instance ou adversaire, job et personnage, ta progression, et un message quand tu bats un record.
 - Suppression d'un combat ou d'une sélection (Ctrl + clic). Rien n'est supprimé automatiquement.
 - Résumé en fin de combat dans le chat (visible par toi seul, désactivé par défaut).
 - Option pour masquer le nom des autres joueurs.

@@ -14,15 +14,16 @@ public sealed record EncounterRecord(
     string Category,
     string Place,
     string CharacterName,
-    EncounterView View)
+    EncounterView View,
+    int WipeNumber = 0)
 {
-    public const int CurrentFormat = 2;
+    public const int CurrentFormat = 3;
 
-    public static EncounterRecord From(Encounter encounter, string category, string place, string characterName, DateTime nowUtc)
+    public static EncounterRecord From(Encounter encounter, string category, string place, string characterName, DateTime nowUtc, int wipeNumber = 0)
     {
         var view = EncounterView.From(encounter, nowUtc);
         var id = $"{encounter.StartUtc:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
-        return new EncounterRecord(CurrentFormat, id, category, place, view.Local?.Name ?? characterName, view);
+        return new EncounterRecord(CurrentFormat, id, category, place, view.Local?.Name ?? characterName, view, wipeNumber);
     }
 }
 

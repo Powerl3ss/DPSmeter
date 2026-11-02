@@ -52,6 +52,16 @@ var tests = new (string Name, Action Run)[]
     ("Issue : l'annonce du jeu prime", Tests.OutcomeMarkWins),
     ("Issue : c'est la cible la plus touchée qui compte", Tests.OutcomeUsesMainTarget),
     ("Issue : une annonce juste après la fin corrige le combat", Tests.OutcomeLateMark),
+    ("Instance : le combat ne se coupe pas tout seul", Tests.DutyWideNeverAutoEnds),
+    ("Instance : le titre est le nom de l'instance", Tests.DutyWideTitle),
+    ("Instance : quittée sans fin annoncée, interrompu", Tests.DutyWideLeftIsInterrupted),
+    ("Instance : un combat hors instance se coupe toujours", Tests.NormalEncounterStillEnds),
+    ("Wipe : compteur à zéro, combat gardé dans la session", Tests.WipeResetsDisplay),
+    ("Wipe : le coup suivant ouvre un nouveau combat", Tests.WipeThenNewEncounter),
+    ("Wipe : PV restants de la dernière cible, pas de la plus touchée", Tests.WipeUsesLastTarget),
+    ("Wipe : cible déjà morte, pas de PV restants", Tests.WipeOnDeadTargetHasNoHp),
+    ("Wipe : numéro et dégâts conservés dans le fichier", Tests.WipeRecordRoundTrip),
+    ("Wipe : les fichiers plus anciens n'en sont pas", Tests.OldRecordIsNotWipe),
     ("Soins, subis, morts : comptés pendant un combat", Tests.SupportStatsAreCounted),
     ("Soins, subis, morts : ne démarrent jamais de combat", Tests.SupportStatsDoNotStart),
     ("Mesures : classement et lignes à zéro retirées", Tests.RowsForMetric),
@@ -765,6 +775,129 @@ internal static class Tests
 
         True(tracker.MarkLastEnded(Outcome.Failure, At(500), 60) == null, "trop tard");
         Equal(Outcome.Victory, tracker.Displayed!.Outcome, "inchangé");
+    }
+
+    public static void DutyWideNeverAutoEnds()
+    {
+        var tracker = new EncounterTracker();
+        tracker.Record(Direct(1, 100), T0, "Arcadion", dutyWide: true);
+        tracker.Update(At(3600), inCombat: false, endDelaySeconds: 5);
+        True(tracker.IsActive, "une heure sans rien faire ne doit pas couper le combat");
+        True(tracker.IsCurrentDutyWide, "couvre l'instance");
+        Near(3600, tracker.BuildView(tracker.Displayed, At(3600))!.DurationSeconds);
+
+        tracker.EndCurrent(At(3700));
+        True(!tracker.IsActive, "la sortie de l'instance le termine");
+    }
+
+    public static void DutyWideTitle()
+    {
+        var encounter = new Encounter(T0, "Arcadion", isDutyWide: true);
+        encounter.Add(Direct(1, 900, "Boss"), At(1));
+        Equal("Arcadion", encounter.Title, "nom de l'instance");
+        Equal("Combat", new Encounter(T0, "", isDutyWide: true).Title, "sans nom d'instance");
+    }
+
+    public static void DutyWideLeftIsInterrupted()
+    {
+        var encounter = new Encounter(T0, "Arcadion", isDutyWide: true);
+        encounter.Add(OnTarget(7, 100, 0.4f), At(1));
+        encounter.MarkTargetDead(7); // un premier boss tué ne fait pas gagner l'instance
+        encounter.End(At(2));
+        Equal(Outcome.Interrupted, encounter.Outcome, "issue");
+    }
+
+    public static void NormalEncounterStillEnds()
+    {
+        var tracker = new EncounterTracker();
+        tracker.Record(Direct(1, 100), T0, "Limsa");
+        tracker.Update(At(10), inCombat: false, endDelaySeconds: 5);
+        True(!tracker.IsActive, "hors instance, le combat se termine");
+    }
+
+    public static void WipeResetsDisplay()
+    {
+        var tracker = new EncounterTracker();
+        tracker.Record(Direct(1, 5000), T0, "Arcadion", dutyWide: true);
+        tracker.MarkOutcome(Outcome.Failure);
+        tracker.EndCurrent(At(60));
+        tracker.HideLastEnded();
+
+        True(tracker.Displayed == null, "le compteur doit repartir de zéro");
+        True(tracker.BuildView(tracker.Displayed, At(61)) == null, "rien à afficher");
+        Equal(1, tracker.History.Length, "le wipe reste gardé");
+        Equal(Outcome.Failure, tracker.History[0].Outcome, "issue");
+        Equal(5000L, tracker.History[0].TotalDamage, "dégâts du wipe");
+    }
+
+    public static void WipeThenNewEncounter()
+    {
+        var tracker = new EncounterTracker();
+        tracker.Record(Direct(1, 5000), T0, "Arcadion", dutyWide: true);
+        tracker.MarkOutcome(Outcome.Failure);
+        tracker.EndCurrent(At(60));
+        tracker.HideLastEnded();
+
+        True(!tracker.Record(Dot(1, 100), At(70), "Arcadion", dutyWide: true), "un tick seul n'ouvre rien");
+        True(tracker.Displayed == null, "toujours à zéro");
+
+        tracker.Record(Direct(1, 200), At(90), "Arcadion", dutyWide: true);
+        Equal(200L, tracker.Displayed!.TotalDamage, "nouveau compteur, sans les dégâts du wipe");
+        Near(1, tracker.BuildView(tracker.Displayed, At(90))!.DurationSeconds);
+
+        // Une fois ce combat terminé, il reste affiché normalement.
+        tracker.EndCurrent(At(120));
+        Equal(200L, tracker.Displayed!.TotalDamage, "dernier combat affiché");
+    }
+
+    public static void WipeUsesLastTarget()
+    {
+        var encounter = new Encounter(T0, "Donjon", isDutyWide: true);
+        encounter.Add(OnTarget(7, 9000, 0.5f), At(1)); // premier boss, le plus touché
+        encounter.MarkTargetDead(7);
+        encounter.Add(OnTarget(8, 100, 0.25f), At(60)); // boss du wipe
+        encounter.MarkOutcome(Outcome.Failure);
+        encounter.End(At(61));
+        Equal(Outcome.Failure, encounter.Outcome, "issue");
+        Near(0.25, encounter.RemainingHp, 0.001);
+    }
+
+    public static void WipeOnDeadTargetHasNoHp()
+    {
+        var encounter = new Encounter(T0, "Donjon", isDutyWide: true);
+        encounter.Add(OnTarget(7, 100, 0.5f), At(1));
+        encounter.MarkTargetDead(7);
+        encounter.MarkOutcome(Outcome.Failure);
+        encounter.End(At(2));
+        True(encounter.RemainingHp < 0, "pas de PV à annoncer");
+    }
+
+    public static void WipeRecordRoundTrip()
+    {
+        var directory = TemporaryDirectory();
+        var store = Reload(directory);
+        var encounter = new Encounter(T0, "Arcadion", isDutyWide: true);
+        encounter.Add(OnTarget(7, 123456, 0.123f), At(1));
+        encounter.Add(OnTarget(7, 1, 0.123f), At(60));
+        encounter.MarkOutcome(Outcome.Failure);
+        encounter.End(At(61));
+        store.Add(EncounterRecord.From(encounter, "Raids", "Arcadion", "Moi", At(61), 2));
+        store.Dispose();
+
+        var read = Reload(directory).All()[0];
+        Equal(2, read.WipeNumber, "numéro du wipe");
+        Equal(123457L, read.View.TotalDamage, "dégâts");
+        Equal("Arcadion", read.View.Title, "titre");
+        Equal("Wipe 2  |  cible à 12,3 %", Formatting.RecordOutcomeText(read), "étiquette");
+        Equal("Wipe 2", Formatting.RecordOutcomeText(read with { View = read.View with { RemainingHp = -1f } }), "sans PV");
+        System.IO.Directory.Delete(directory, true);
+    }
+
+    public static void OldRecordIsNotWipe()
+    {
+        var record = Fight("a", "Boss", 25, 0, 60, 6000, Outcome.Failure);
+        Equal(0, record.WipeNumber, "pas de numéro");
+        True(Formatting.RecordOutcomeText(record).StartsWith("Échec"), "reste un échec");
     }
 
     public static void SupportStatsAreCounted()

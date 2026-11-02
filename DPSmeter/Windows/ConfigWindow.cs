@@ -614,6 +614,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
         SectionTitle("Calcul");
         Card(() =>
         {
+            changed |= ToggleRow("Un seul combat par instance", "Le compteur tourne du premier coup jusqu'à la sortie de l'instance, sans se couper. Il repart de zéro à chaque wipe. Désactivé : un combat par groupe d'ennemis.", Cfg.KeepEncounterInDuty, v => Cfg.KeepEncounterInDuty = v);
             changed |= ToggleRow("Ajouter les familiers au joueur", "Fée, carbuncle, reine automate... comptent pour leur maître.", Cfg.MergePets, v => Cfg.MergePets = v);
             changed |= ToggleRow("Transcendance sur sa propre ligne", "Sinon, ses dégâts comptent pour le joueur qui la lance.", Cfg.SeparateLimitBreak, v => Cfg.SeparateLimitBreak = v);
             changed |= SliderIntRow("Fin de combat", "Secondes sans dégâts, une fois sorti de combat, avant de clore le combat.", Cfg.EndDelaySeconds, 1, 30, v => Cfg.EndDelaySeconds = v);

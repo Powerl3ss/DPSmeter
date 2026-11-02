@@ -46,6 +46,7 @@ public class Configuration : IPluginConfiguration
 
     // --- Mesure ---
     public MeterScope Scope { get; set; } = MeterScope.Party;
+    public bool KeepEncounterInDuty { get; set; } = true;
     public bool MergePets { get; set; } = true;
     public bool SeparateLimitBreak { get; set; } = true;
     public int EndDelaySeconds { get; set; } = 5;

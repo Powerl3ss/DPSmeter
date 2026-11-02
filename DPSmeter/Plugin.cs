@@ -60,6 +60,8 @@ public sealed class Plugin : IDalamudPlugin
     private EncounterView? view;
     private (Encounter Encounter, EncounterRecord Record)? lastSaved;
     private readonly HashSet<uint> deadNow = new();
+    private int wipesThisRun;
+    private int endingWipeNumber;
 
     /// <summary>Aperçu du HUD avec de faux chiffres (réglages), pour le placer sans se battre.</summary>
     public bool PreviewMode { get; set; }
@@ -77,9 +79,15 @@ public sealed class Plugin : IDalamudPlugin
     /// <summary>Type de contenu de la zone actuelle (Donjons, Défis, Raids...), pour trier l'historique.</summary>
     public string ZoneCategory { get; private set; } = OpenWorldCategory;
 
+    /// <summary>En instance, avec un seul combat du premier coup jusqu'à la sortie (ou jusqu'au wipe).</summary>
+    public bool IsDutyWideMode => Configuration.KeepEncounterInDuty && Condition[ConditionFlag.BoundByDuty];
+
+    /// <summary>L'instance est terminée : on n'ouvre plus de combat jusqu'à la sortie, l'affichage garde le résultat.</summary>
+    public bool IsDutyOver { get; private set; }
+
     /// <summary>Vrai en combat, et quelques secondes après (pour laisser le temps de lire le résultat).</summary>
     public bool RecentlyInCombat =>
-        Condition[ConditionFlag.InCombat] || Tracker.IsActive ||
+        Condition[ConditionFlag.InCombat] || Tracker.IsActive || IsDutyWideMode ||
         (DateTime.UtcNow - lastCombatUtc).TotalSeconds < Math.Max(0, Configuration.HideDelaySeconds);
 
     public Plugin()
@@ -114,6 +122,7 @@ public sealed class Plugin : IDalamudPlugin
         ClientState.Logout += OnLogout;
         DutyState.DutyCompleted += OnDutyCompleted;
         DutyState.DutyWiped += OnDutyWiped;
+        DutyState.DutyRecommenced += OnDutyRecommenced;
         Framework.Update += OnFrameworkUpdate;
 
         if (Parser.HookError != null)
@@ -127,6 +136,7 @@ public sealed class Plugin : IDalamudPlugin
         ClientState.Logout -= OnLogout;
         DutyState.DutyCompleted -= OnDutyCompleted;
         DutyState.DutyWiped -= OnDutyWiped;
+        DutyState.DutyRecommenced -= OnDutyRecommenced;
 
         // Un combat en cours à l'arrêt du plugin est enregistré comme les autres.
         Tracker.EndCurrent(DateTime.UtcNow);
@@ -188,7 +198,7 @@ public sealed class Plugin : IDalamudPlugin
 
         // Seulement en combat : après un wipe, le boss récupère tous ses PV, ce qui fausserait les PV restants.
         if (inCombat)
-            Parser.PollMainTarget();
+            Parser.PollTargets();
 
         Tracker.RecentWindowSeconds = Configuration.RecentWindowSeconds;
         Tracker.Update(now, inCombat, Math.Max(1, Configuration.EndDelaySeconds));
@@ -200,13 +210,64 @@ public sealed class Plugin : IDalamudPlugin
     {
         Tracker.EndCurrent(DateTime.UtcNow);
         UpdateZoneName(territory);
+
+        IsDutyOver = false;
+        wipesThisRun = 0;
+
+        // Nouvelle instance : le compteur repart de zéro au lieu de montrer le combat précédent.
+        if (Configuration.KeepEncounterInDuty && ZoneCategory != OpenWorldCategory)
+            Tracker.HideLastEnded();
     }
 
     private void OnLogout(int type, int code) => Tracker.EndCurrent(DateTime.UtcNow);
 
-    private void OnDutyCompleted(IDutyStateEventArgs args) => ApplyDutyOutcome(Outcome.Victory);
+    private void OnDutyCompleted(IDutyStateEventArgs args)
+    {
+        IsDutyOver = true;
+        var now = DateTime.UtcNow;
 
-    private void OnDutyWiped(IDutyStateEventArgs args) => ApplyDutyOutcome(Outcome.Failure);
+        // Plus rien à mesurer : le combat se fige sur son résultat, qui reste affiché jusqu'à la sortie.
+        if (Tracker.IsCurrentDutyWide)
+        {
+            Tracker.MarkOutcome(Outcome.Victory);
+            Tracker.EndCurrent(now);
+            return;
+        }
+
+        ApplyDutyOutcome(Outcome.Victory);
+    }
+
+    private void OnDutyWiped(IDutyStateEventArgs args) => HandleWipe();
+
+    /// <summary>La partie repart : si le wipe n'a pas été annoncé, le combat en cours en était un.</summary>
+    private void OnDutyRecommenced(IDutyStateEventArgs args)
+    {
+        IsDutyOver = false;
+        if (Tracker.IsCurrentDutyWide)
+            HandleWipe();
+    }
+
+    /// <summary>Le groupe est vaincu : le wipe est enregistré avec ses dégâts, et le compteur repart de zéro.</summary>
+    private void HandleWipe()
+    {
+        if (Tracker.IsActive)
+        {
+            wipesThisRun++;
+            Tracker.MarkOutcome(Outcome.Failure);
+            endingWipeNumber = wipesThisRun;
+            Tracker.EndCurrent(DateTime.UtcNow);
+            endingWipeNumber = 0;
+        }
+        else if (lastSaved is { Record.WipeNumber: 0 })
+        {
+            // Combat terminé juste avant l'annonce. Un combat déjà compté comme wipe ne l'est pas deux fois.
+            wipesThisRun++;
+            ApplyDutyOutcome(Outcome.Failure);
+        }
+
+        Tracker.HideLastEnded();
+        view = null;
+    }
 
     /// <summary>L'instance annonce son issue : sur le combat en cours, ou sur celui qui vient de se terminer.</summary>
     private void ApplyDutyOutcome(Outcome outcome)
@@ -221,6 +282,7 @@ public sealed class Plugin : IDalamudPlugin
         var updated = saved.Record with
         {
             View = saved.Record.View with { Outcome = marked.Outcome, RemainingHp = marked.RemainingHp },
+            WipeNumber = outcome == Outcome.Failure ? wipesThisRun : saved.Record.WipeNumber,
         };
         lastSaved = (marked, updated);
         Store.Add(updated);
@@ -250,9 +312,10 @@ public sealed class Plugin : IDalamudPlugin
         Parser.ResetTracking();
 
         var ended = EncounterView.From(encounter, DateTime.UtcNow);
-        if (Configuration.SaveEncounters && ended.DurationSeconds >= Configuration.MinSaveSeconds)
+        // Un wipe est toujours enregistré, même très court : chacun doit se retrouver dans l'historique.
+        if (Configuration.SaveEncounters && (endingWipeNumber > 0 || ended.DurationSeconds >= Configuration.MinSaveSeconds))
         {
-            var record = EncounterRecord.From(encounter, ZoneCategory, ZoneName, LocalName, DateTime.UtcNow);
+            var record = EncounterRecord.From(encounter, ZoneCategory, ZoneName, LocalName, DateTime.UtcNow, endingWipeNumber);
             if (Configuration.ChatRecords && Store.IsLoaded && PersonalBests.BeatsPrevious(record, Store.All()))
                 Print($"Nouveau record sur {record.View.Title} : {Formatting.Full(record.View.Local!.Dps)} DPS ({JobAbbreviation(record.View.Local!.JobId)}) !");
 

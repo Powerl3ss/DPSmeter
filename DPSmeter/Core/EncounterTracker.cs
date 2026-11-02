@@ -12,6 +12,7 @@ public sealed class EncounterTracker
     private readonly object gate = new();
     private readonly List<Encounter> history = new();
     private Encounter? current;
+    private bool showLastEnded = true;
 
     /// <summary>Nombre de combats terminés gardés en mémoire (ceux enregistrés sont dans EncounterStore).</summary>
     public int MaxHistory { get; set; } = 20;
@@ -37,7 +38,7 @@ public sealed class EncounterTracker
         get
         {
             lock (gate)
-                return current ?? (history.Count > 0 ? history[0] : null);
+                return current ?? (showLastEnded && history.Count > 0 ? history[0] : null);
         }
     }
 
@@ -55,7 +56,7 @@ public sealed class EncounterTracker
     /// Compte des dégâts infligés. Un coup direct démarre un combat si besoin. Un tick de DoT n'en démarre
     /// jamais : sinon les derniers ticks après la mort d'une cible ouvriraient un faux combat.
     /// </summary>
-    public bool Record(in Hit hit, DateTime nowUtc, string zoneName)
+    public bool Record(in Hit hit, DateTime nowUtc, string zoneName, bool dutyWide = false)
     {
         lock (gate)
         {
@@ -66,7 +67,7 @@ public sealed class EncounterTracker
             {
                 if (hit.IsDot)
                     return false;
-                current = new Encounter(nowUtc, zoneName);
+                current = new Encounter(nowUtc, zoneName, dutyWide);
             }
 
             current.Add(hit, nowUtc);
@@ -107,6 +108,33 @@ public sealed class EncounterTracker
             current?.UpdateTargetHp(targetId, hp);
     }
 
+    /// <summary>Le combat en cours couvre-t-il toute une instance ?</summary>
+    public bool IsCurrentDutyWide
+    {
+        get
+        {
+            lock (gate)
+                return current is { IsDutyWide: true };
+        }
+    }
+
+    /// <summary>Dernière cible touchée dans le combat en cours (0 s'il n'y en a pas).</summary>
+    public uint LastTargetId
+    {
+        get
+        {
+            lock (gate)
+                return current?.LastTargetId ?? 0;
+        }
+    }
+
+    /// <summary>Remet l'affichage à zéro sans rien oublier : le dernier combat n'est plus montré, jusqu'au suivant.</summary>
+    public void HideLastEnded()
+    {
+        lock (gate)
+            showLastEnded = false;
+    }
+
     /// <summary>Cible principale du combat en cours (0 s'il n'y en a pas).</summary>
     public uint MainTargetId
     {
@@ -144,14 +172,15 @@ public sealed class EncounterTracker
     /// <summary>
     /// À appeler régulièrement. Le combat se termine quand le joueur n'est plus en combat et que plus
     /// personne ne frappe depuis <paramref name="endDelaySeconds"/> secondes. Tant que le jeu indique
-    /// « en combat », il continue : un boss peut devenir inciblable un long moment.
+    /// « en combat », il continue : un boss peut devenir inciblable un long moment. Un combat couvrant
+    /// une instance ne s'arrête jamais ici, seulement sur un wipe, la fin de l'instance ou sa sortie.
     /// </summary>
     public void Update(DateTime nowUtc, bool inCombat, double endDelaySeconds)
     {
         Encounter? ended = null;
         lock (gate)
         {
-            if (current != null && !inCombat && (nowUtc - current.LastDamageUtc).TotalSeconds >= endDelaySeconds)
+            if (current is { IsDutyWide: false } && !inCombat && (nowUtc - current.LastDamageUtc).TotalSeconds >= endDelaySeconds)
                 ended = Archive(nowUtc);
         }
 
@@ -177,6 +206,7 @@ public sealed class EncounterTracker
         {
             current = null;
             history.Clear();
+            showLastEnded = true;
         }
     }
 
@@ -193,6 +223,7 @@ public sealed class EncounterTracker
         current = null;
         ended.End(nowUtc);
 
+        showLastEnded = true;
         history.Insert(0, ended);
         var max = Math.Max(1, MaxHistory);
         if (history.Count > max)

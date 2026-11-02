@@ -69,6 +69,17 @@ public static class Formatting
         return outcome == Outcome.Failure && remainingHp >= 0f ? $"{label}  |  cible à {OneDecimalPercent(remainingHp)}" : label;
     }
 
+    /// <summary>Étiquette d'un combat enregistré : un wipe porte son numéro dans la partie.</summary>
+    public static string RecordOutcomeText(EncounterRecord record)
+    {
+        if (record.WipeNumber <= 0)
+            return OutcomeText(record.View.Outcome, record.View.RemainingHp);
+
+        return record.View.RemainingHp >= 0f
+            ? $"Wipe {record.WipeNumber}  |  cible à {OneDecimalPercent(record.View.RemainingHp)}"
+            : $"Wipe {record.WipeNumber}";
+    }
+
     public static string MetricLabel(MeterMetric metric) => metric switch
     {
         MeterMetric.Healing => "Soins",
