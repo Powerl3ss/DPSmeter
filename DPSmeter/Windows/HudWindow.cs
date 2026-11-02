@@ -173,7 +173,19 @@ public sealed class HudWindow : Window, IDisposable
         }
 
         ImGui.SetCursorPos(new Vector2(start.X, start.Y + titleHeight + ImGui.GetStyle().ItemSpacing.Y * 0.5f));
-        ImGui.Dummy(Vector2.Zero);
+
+        // Fine barre entre le titre et les résultats (rien à séparer quand le HUD est replié).
+        if (Cfg.HudCollapsed)
+        {
+            ImGui.Dummy(Vector2.Zero);
+            return;
+        }
+
+        var thickness = MathF.Max(1f, MathF.Round(ImGuiHelpers.GlobalScale * textScale));
+        var lineMin = ImGui.GetCursorScreenPos();
+        lineMin.Y = MathF.Round(lineMin.Y);
+        ImGui.GetWindowDrawList().AddRectFilled(lineMin, lineMin + new Vector2(width, thickness), ImGui.GetColorU32(Cfg.AccentColor with { W = 0.45f }));
+        ImGui.Dummy(new Vector2(width, thickness));
     }
 
     // ------------------------------------------------------------ Barres
