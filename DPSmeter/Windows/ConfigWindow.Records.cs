@@ -224,13 +224,14 @@ public sealed partial class ConfigWindow
         OnFiltersChanged();
         RefreshHistoryList();
 
-        var index = historyList.FindIndex(r => r.Id == id);
+        var index = historyList.FindIndex(r => r.Contains(id));
         if (index < 0)
             return;
 
         historyShown = Math.Max(HistoryPageSize, index + 1);
-        expandedRecord = id;
-        scrollToRecord = id;
+        expandedRun = historyList[index].Id;
+        expandedAttempt = id;
+        scrollToRun = expandedRun;
         page = Page.History;
     }
 }

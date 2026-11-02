@@ -35,11 +35,12 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 
 **Le reste**
 - Combats enregistrés sur ton PC, retrouvables d'une session à l'autre, sans limite de temps.
+- Une entrée d'historique par passage dans une instance, avec tous ses wipes et son essai final à l'intérieur.
 - Page Historique : filtres par type de contenu (donjons, défis, raids...), lieu, job, issue et personnage, tri par date, DPS ou durée.
 - Détail de chaque combat : tableau des joueurs, courbe de DPS avec les morts, toutes les actions et tous les soins de chaque joueur.
 - Issue de chaque combat : victoire, wipe numéroté avec ses dégâts et les PV restants de la cible, échec ou interrompu.
 - Page Records : ton meilleur DPS par instance ou adversaire, job et personnage, ta progression, et un message quand tu bats un record.
-- Suppression d'un combat ou d'une sélection (Ctrl + clic). Rien n'est supprimé automatiquement.
+- Suppression d'une entrée, d'un seul essai ou d'une sélection (Ctrl + clic). Rien n'est supprimé automatiquement.
 - Résumé en fin de combat dans le chat (visible par toi seul, désactivé par défaut).
 - Option pour masquer le nom des autres joueurs.
 

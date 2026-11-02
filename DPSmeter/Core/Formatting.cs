@@ -80,6 +80,16 @@ public static class Formatting
             : $"Wipe {record.WipeNumber}";
     }
 
+    /// <summary>Étiquette d'une entrée de l'historique : « Victoire  |  2 wipes », « 3 wipes »...</summary>
+    public static string RunOutcomeText(EncounterRun run)
+    {
+        if (run.Wipes == 0)
+            return run.Attempts.Count == 1 ? RecordOutcomeText(run.Last) : OutcomeLabel(run.Outcome);
+
+        var wipes = run.Wipes > 1 ? $"{run.Wipes} wipes" : "1 wipe";
+        return run.Outcome is Outcome.Victory or Outcome.Interrupted ? $"{OutcomeLabel(run.Outcome)}  |  {wipes}" : wipes;
+    }
+
     public static string MetricLabel(MeterMetric metric) => metric switch
     {
         MeterMetric.Healing => "Soins",

@@ -15,16 +15,49 @@ public sealed record EncounterRecord(
     string Place,
     string CharacterName,
     EncounterView View,
-    int WipeNumber = 0)
+    int WipeNumber = 0,
+    string RunId = "")
 {
-    public const int CurrentFormat = 3;
+    public const int CurrentFormat = 4;
 
-    public static EncounterRecord From(Encounter encounter, string category, string place, string characterName, DateTime nowUtc, int wipeNumber = 0)
+    public static EncounterRecord From(Encounter encounter, string category, string place, string characterName, DateTime nowUtc, int wipeNumber = 0, string runId = "")
     {
         var view = EncounterView.From(encounter, nowUtc);
         var id = $"{encounter.StartUtc:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..8]}";
-        return new EncounterRecord(CurrentFormat, id, category, place, view.Local?.Name ?? characterName, view, wipeNumber);
+        return new EncounterRecord(CurrentFormat, id, category, place, view.Local?.Name ?? characterName, view, wipeNumber, runId);
     }
+}
+
+/// <summary>
+/// Une entrée de l'historique : un passage dans une instance, avec tous ses essais (wipes compris).
+/// Hors instance, et pour les combats enregistrés avant la v0.5, une entrée contient un seul combat.
+/// </summary>
+public sealed record EncounterRun(string Id, IReadOnlyList<EncounterRecord> Attempts)
+{
+    public EncounterRecord First => Attempts[0];
+    public EncounterRecord Last => Attempts[^1];
+
+    public string Category => First.Category;
+    public string Place => First.Place;
+    public string CharacterName => First.CharacterName;
+    public DateTime StartUtc => First.View.StartUtc;
+
+    /// <summary>Le nom de l'instance, ou celui de l'adversaire pour un combat isolé.</summary>
+    public string Title => First.RunId.Length > 0 && First.Place.Length > 0 ? First.Place : First.View.Title;
+
+    public int Wipes => Attempts.Count(a => a.WipeNumber > 0);
+    public double DurationSeconds => Attempts.Sum(a => a.View.DurationSeconds);
+    public long TotalDamage => Attempts.Sum(a => a.View.TotalDamage);
+    public double BestGroupDps => Attempts.Max(a => a.View.TotalDps);
+    public double BestLocalDps => Attempts.Max(a => a.View.Local?.Dps ?? -1);
+
+    /// <summary>Job joué, d'après le premier essai où le joueur apparaît (0 si inconnu).</summary>
+    public uint LocalJobId => Attempts.Select(a => a.View.Local?.JobId ?? 0).FirstOrDefault(job => job != 0);
+
+    /// <summary>Une victoire l'emporte sur les wipes qui l'ont précédée. Sinon, c'est le dernier essai qui compte.</summary>
+    public Outcome Outcome => Attempts.Any(a => a.View.Outcome == Outcome.Victory) ? Outcome.Victory : Last.View.Outcome;
+
+    public bool Contains(string recordId) => Attempts.Any(a => a.Id == recordId);
 }
 
 /// <summary>
@@ -225,12 +258,12 @@ public readonly record struct EncounterFilter(
     uint JobId = 0,
     Outcome? Outcome = null)
 {
-    public bool Matches(EncounterRecord record) =>
-        (string.IsNullOrEmpty(Category) || record.Category == Category) &&
-        (string.IsNullOrEmpty(Place) || record.Place == Place) &&
-        (string.IsNullOrEmpty(Character) || record.CharacterName == Character) &&
-        (JobId == 0 || record.View.Local?.JobId == JobId) &&
-        (Outcome == null || record.View.Outcome == Outcome);
+    public bool Matches(EncounterRun run) =>
+        (string.IsNullOrEmpty(Category) || run.Category == Category) &&
+        (string.IsNullOrEmpty(Place) || run.Place == Place) &&
+        (string.IsNullOrEmpty(Character) || run.CharacterName == Character) &&
+        (JobId == 0 || run.LocalJobId == JobId) &&
+        (Outcome == null || run.Outcome == Outcome);
 }
 
 /// <summary>Filtres et tris de la page Historique.</summary>
@@ -246,30 +279,37 @@ public static class EncounterQuery
         _ => string.Empty,
     };
 
-    public static List<EncounterRecord> Apply(IEnumerable<EncounterRecord> records, EncounterFilter filter, EncounterSort sort)
-    {
-        var filtered = records.Where(filter.Matches);
+    /// <summary>Range les combats par passage dans une instance, les essais du plus ancien au plus récent.</summary>
+    public static List<EncounterRun> Group(IEnumerable<EncounterRecord> records) =>
+        records.GroupBy(r => r.RunId.Length > 0 ? r.RunId : r.Id)
+               .Select(g => new EncounterRun(g.Key, g.OrderBy(r => r.View.StartUtc).ThenBy(r => r.Id, StringComparer.Ordinal).ToList()))
+               .ToList();
 
+    public static List<EncounterRun> Apply(IEnumerable<EncounterRecord> records, EncounterFilter filter, EncounterSort sort) =>
+        Sort(Group(records).Where(filter.Matches), sort);
+
+    public static List<EncounterRun> Sort(IEnumerable<EncounterRun> runs, EncounterSort sort)
+    {
         // À égalité, le plus récent d'abord : l'ordre reste stable d'une image à l'autre.
         var sorted = sort switch
         {
-            EncounterSort.Oldest => filtered.OrderBy(r => r.View.StartUtc),
-            EncounterSort.BestGroupDps => filtered.OrderByDescending(r => r.View.TotalDps),
-            EncounterSort.BestLocalDps => filtered.OrderByDescending(r => r.View.Local?.Dps ?? -1),
-            EncounterSort.Longest => filtered.OrderByDescending(r => r.View.DurationSeconds),
-            _ => filtered.OrderByDescending(r => r.View.StartUtc),
+            EncounterSort.Oldest => runs.OrderBy(r => r.StartUtc),
+            EncounterSort.BestGroupDps => runs.OrderByDescending(r => r.BestGroupDps),
+            EncounterSort.BestLocalDps => runs.OrderByDescending(r => r.BestLocalDps),
+            EncounterSort.Longest => runs.OrderByDescending(r => r.DurationSeconds),
+            _ => runs.OrderByDescending(r => r.StartUtc),
         };
 
-        return sorted.ThenByDescending(r => r.View.StartUtc).ThenBy(r => r.Id, StringComparer.Ordinal).ToList();
+        return sorted.ThenByDescending(r => r.StartUtc).ThenBy(r => r.Id, StringComparer.Ordinal).ToList();
     }
 
-    /// <summary>Valeurs possibles d'un filtre et leur nombre de combats, par ordre alphabétique.</summary>
-    public static List<(string Value, int Count)> Options(IEnumerable<EncounterRecord> records, Func<EncounterRecord, string> key) =>
-        records.GroupBy(key)
-               .Where(g => g.Key.Length > 0)
-               .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
-               .Select(g => (g.Key, g.Count()))
-               .ToList();
+    /// <summary>Valeurs possibles d'un filtre et leur nombre d'entrées, par ordre alphabétique.</summary>
+    public static List<(string Value, int Count)> Options<T>(IEnumerable<T> items, Func<T, string> key) =>
+        items.GroupBy(key)
+             .Where(g => g.Key.Length > 0)
+             .OrderBy(g => g.Key, StringComparer.CurrentCultureIgnoreCase)
+             .Select(g => (g.Key, g.Count()))
+             .ToList();
 }
 
 /// <summary>Ton meilleur DPS sur un adversaire, avec un job et un personnage.</summary>

@@ -62,6 +62,13 @@ var tests = new (string Name, Action Run)[]
     ("Wipe : cible déjà morte, pas de PV restants", Tests.WipeOnDeadTargetHasNoHp),
     ("Wipe : numéro et dégâts conservés dans le fichier", Tests.WipeRecordRoundTrip),
     ("Wipe : les fichiers plus anciens n'en sont pas", Tests.OldRecordIsNotWipe),
+    ("Partie : une instance donne une seule entrée, wipes dedans", Tests.RunGroupsAttempts),
+    ("Partie : les essais sont rangés dans l'ordre", Tests.RunOrdersAttempts),
+    ("Partie : deux passages dans la même instance restent séparés", Tests.RunsAreSeparate),
+    ("Partie : un combat sans partie reste seul", Tests.RecordWithoutRunStaysAlone),
+    ("Partie : totaux et étiquettes", Tests.RunTotalsAndLabels),
+    ("Partie : filtres et tris sur l'entrée entière", Tests.RunFiltersAndSorts),
+    ("Partie : conservée dans le fichier", Tests.RunRoundTrip),
     ("Soins, subis, morts : comptés pendant un combat", Tests.SupportStatsAreCounted),
     ("Soins, subis, morts : ne démarrent jamais de combat", Tests.SupportStatsDoNotStart),
     ("Mesures : classement et lignes à zéro retirées", Tests.RowsForMetric),
@@ -488,7 +495,7 @@ internal static class Tests
         Saved("d", "Monde ouvert", "Limsa", "Moi", 3000, 100, 10),
     };
 
-    private static string Ids(IEnumerable<EncounterRecord> records) => string.Concat(records.Select(r => r.Id));
+    private static string Ids(IEnumerable<EncounterRun> runs) => string.Concat(runs.Select(r => r.Id));
 
     public static void QueryFilters()
     {
@@ -546,6 +553,7 @@ internal static class Tests
         var read = store.All()[0];
         var row = read.View.Local!;
         Equal(Outcome.Unknown, read.View.Outcome, "issue");
+        Equal("", read.RunId, "pas de partie");
         Equal("Feu", row.Actions[0].Name, "action relue depuis TopActions");
         Equal(100000L, row.Actions[0].Damage, "dégâts de l'action");
         Equal(0L, row.Actions[0].MaxHit, "plus gros coup absent");
@@ -898,6 +906,129 @@ internal static class Tests
         var record = Fight("a", "Boss", 25, 0, 60, 6000, Outcome.Failure);
         Equal(0, record.WipeNumber, "pas de numéro");
         True(Formatting.RecordOutcomeText(record).StartsWith("Échec"), "reste un échec");
+    }
+
+    private static EncounterRecord Attempt(string id, string run, double start, double seconds, long damage, Outcome outcome, int wipe = 0, uint job = 25)
+    {
+        var encounter = new Encounter(At(start), "Arcadion", isDutyWide: true);
+        encounter.Add(new Hit(1, "Moi", job, true, "Boss", "Feu", damage, TargetId: 7, TargetHp: 0.5f), At(start));
+        encounter.Add(new Hit(1, "Moi", job, true, "Boss", "Feu", 1, TargetId: 7, TargetHp: 0.5f), At(start + seconds));
+        encounter.MarkOutcome(outcome);
+        encounter.End(At(start + seconds));
+        return EncounterRecord.From(encounter, "Raids", "Arcadion", "Moi", At(start + seconds), wipe, run) with { Id = id };
+    }
+
+    public static void RunGroupsAttempts()
+    {
+        var runs = EncounterQuery.Group(new[]
+        {
+            Attempt("w1", "partie", 0, 60, 1000, Outcome.Failure, 1),
+            Attempt("w2", "partie", 100, 60, 2000, Outcome.Failure, 2),
+            Attempt("fin", "partie", 200, 60, 3000, Outcome.Victory),
+        });
+        Equal(1, runs.Count, "une seule entrée");
+        Equal("partie", runs[0].Id, "identifiant");
+        Equal(3, runs[0].Attempts.Count, "essais");
+        True(runs[0].Contains("w2"), "le wipe est dedans");
+        True(!runs[0].Contains("autre"), "rien d'autre");
+    }
+
+    public static void RunOrdersAttempts()
+    {
+        var run = EncounterQuery.Group(new[]
+        {
+            Attempt("c", "partie", 200, 60, 3000, Outcome.Victory),
+            Attempt("a", "partie", 0, 60, 1000, Outcome.Failure, 1),
+            Attempt("b", "partie", 100, 60, 2000, Outcome.Failure, 2),
+        })[0];
+        Equal("abc", string.Concat(run.Attempts.Select(a => a.Id)), "ordre");
+        Equal("a", run.First.Id, "premier");
+        Equal("c", run.Last.Id, "dernier");
+        Near(run.First.View.StartUtc.Ticks, run.StartUtc.Ticks);
+    }
+
+    public static void RunsAreSeparate()
+    {
+        var runs = EncounterQuery.Group(new[]
+        {
+            Attempt("a", "lundi", 0, 60, 1000, Outcome.Victory),
+            Attempt("b", "mardi", 9000, 60, 2000, Outcome.Victory),
+        });
+        Equal(2, runs.Count, "deux passages");
+    }
+
+    public static void RecordWithoutRunStaysAlone()
+    {
+        var runs = EncounterQuery.Group(new[]
+        {
+            Fight("a", "Boss", 25, 0, 60, 6000, Outcome.Victory),
+            Fight("b", "Boss", 25, 100, 60, 6000, Outcome.Victory),
+        });
+        Equal(2, runs.Count, "chacun sa ligne");
+        Equal("Boss", runs[0].Title, "nom de l'adversaire");
+        Equal("Victoire", Formatting.RunOutcomeText(runs[0]), "étiquette");
+    }
+
+    public static void RunTotalsAndLabels()
+    {
+        var won = EncounterQuery.Group(new[]
+        {
+            Attempt("w1", "partie", 0, 60, 1000, Outcome.Failure, 1),
+            Attempt("w2", "partie", 100, 40, 2000, Outcome.Failure, 2),
+            Attempt("fin", "partie", 200, 100, 3000, Outcome.Victory),
+        })[0];
+        Equal("Arcadion", won.Title, "nom de l'instance");
+        Equal(2, won.Wipes, "wipes");
+        Near(200, won.DurationSeconds);
+        Equal(6003L, won.TotalDamage, "dégâts de tous les essais");
+        Equal(Outcome.Victory, won.Outcome, "la victoire l'emporte");
+        Equal("Victoire  |  2 wipes", Formatting.RunOutcomeText(won), "étiquette");
+        Equal(25u, won.LocalJobId, "job");
+
+        var lost = EncounterQuery.Group(new[]
+        {
+            Attempt("w1", "x", 0, 60, 1000, Outcome.Failure, 1),
+            Attempt("w2", "x", 100, 60, 1000, Outcome.Failure, 2),
+            Attempt("w3", "x", 200, 60, 1000, Outcome.Failure, 3),
+        })[0];
+        Equal(Outcome.Failure, lost.Outcome, "que des wipes");
+        Equal("3 wipes", Formatting.RunOutcomeText(lost), "étiquette");
+
+        var left = EncounterQuery.Group(new[]
+        {
+            Attempt("w1", "y", 0, 60, 1000, Outcome.Failure, 1),
+            Attempt("sortie", "y", 100, 60, 1000, Outcome.Interrupted),
+        })[0];
+        Equal("Interrompu  |  1 wipe", Formatting.RunOutcomeText(left), "quittée après un wipe");
+    }
+
+    public static void RunFiltersAndSorts()
+    {
+        var all = new[]
+        {
+            Attempt("a1", "a", 0, 60, 90000, Outcome.Failure, 1),
+            Attempt("a2", "a", 100, 60, 1000, Outcome.Victory),
+            Attempt("b1", "b", 1000, 60, 2000, Outcome.Failure, 1, job: 27),
+        };
+        Equal("a", Ids(EncounterQuery.Apply(all, new EncounterFilter(Outcome: Outcome.Victory), EncounterSort.Newest)), "issue de l'entrée");
+        Equal("b", Ids(EncounterQuery.Apply(all, new EncounterFilter(Outcome: Outcome.Failure), EncounterSort.Newest)), "échec seul");
+        Equal("b", Ids(EncounterQuery.Apply(all, new EncounterFilter(JobId: 27), EncounterSort.Newest)), "job");
+        Equal("ba", Ids(EncounterQuery.Apply(all, new EncounterFilter(), EncounterSort.Newest)), "récents");
+        Equal("ab", Ids(EncounterQuery.Apply(all, new EncounterFilter(), EncounterSort.BestGroupDps)), "le meilleur essai classe l'entrée");
+    }
+
+    public static void RunRoundTrip()
+    {
+        var directory = TemporaryDirectory();
+        var store = Reload(directory);
+        store.Add(Attempt("a", "partie", 0, 60, 1000, Outcome.Failure, 1));
+        store.Add(Attempt("b", "partie", 100, 60, 1000, Outcome.Victory));
+        store.Dispose();
+
+        var runs = EncounterQuery.Group(Reload(directory).All());
+        Equal(1, runs.Count, "toujours une seule entrée après relecture");
+        Equal(2, runs[0].Attempts.Count, "essais");
+        System.IO.Directory.Delete(directory, true);
     }
 
     public static void SupportStatsAreCounted()

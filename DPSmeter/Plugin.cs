@@ -61,6 +61,7 @@ public sealed class Plugin : IDalamudPlugin
     private (Encounter Encounter, EncounterRecord Record)? lastSaved;
     private readonly HashSet<uint> deadNow = new();
     private int wipesThisRun;
+    private string currentRunId = string.Empty;
     private int endingWipeNumber;
 
     /// <summary>Aperçu du HUD avec de faux chiffres (réglages), pour le placer sans se battre.</summary>
@@ -98,6 +99,7 @@ public sealed class Plugin : IDalamudPlugin
             (ex, what) => Log.Error(ex, what));
         Store.LoadInBackground();
         UpdateZoneName(ClientState.TerritoryType);
+        StartRun();
 
         Parser = new CombatParser(this, Tracker);
         Tracker.EncounterEnded += OnEncounterEnded;
@@ -213,11 +215,16 @@ public sealed class Plugin : IDalamudPlugin
 
         IsDutyOver = false;
         wipesThisRun = 0;
+        StartRun();
 
         // Nouvelle instance : le compteur repart de zéro au lieu de montrer le combat précédent.
         if (Configuration.KeepEncounterInDuty && ZoneCategory != OpenWorldCategory)
             Tracker.HideLastEnded();
     }
+
+    /// <summary>Chaque entrée dans une instance ouvre une nouvelle entrée de l'historique. Hors instance, chaque combat est seul.</summary>
+    private void StartRun() =>
+        currentRunId = ZoneCategory != OpenWorldCategory ? Guid.NewGuid().ToString("N") : string.Empty;
 
     private void OnLogout(int type, int code) => Tracker.EndCurrent(DateTime.UtcNow);
 
@@ -315,7 +322,7 @@ public sealed class Plugin : IDalamudPlugin
         // Un wipe est toujours enregistré, même très court : chacun doit se retrouver dans l'historique.
         if (Configuration.SaveEncounters && (endingWipeNumber > 0 || ended.DurationSeconds >= Configuration.MinSaveSeconds))
         {
-            var record = EncounterRecord.From(encounter, ZoneCategory, ZoneName, LocalName, DateTime.UtcNow, endingWipeNumber);
+            var record = EncounterRecord.From(encounter, ZoneCategory, ZoneName, LocalName, DateTime.UtcNow, endingWipeNumber, currentRunId);
             if (Configuration.ChatRecords && Store.IsLoaded && PersonalBests.BeatsPrevious(record, Store.All()))
                 Print($"Nouveau record sur {record.View.Title} : {Formatting.Full(record.View.Local!.Dps)} DPS ({JobAbbreviation(record.View.Local!.JobId)}) !");
 
