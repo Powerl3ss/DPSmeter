@@ -454,11 +454,17 @@ public sealed class HudWindow : Window, IDisposable
         if (!ImGui.BeginPopup(menuId))
             return;
 
-        if (ImGui.MenuItem("Réglages"))
-            plugin.ToggleConfigUi();
+        // Ce qu'on change le plus souvent d'abord : la mesure, puis le combat, puis le HUD lui-même.
+        ImGui.TextDisabled("Afficher");
+        foreach (var metric in Enum.GetValues<MeterMetric>())
+        {
+            if (ImGui.MenuItem(Formatting.MetricLabel(metric), Cfg.HudMetric == metric))
+                Toggle(c => c.HudMetric = metric);
+        }
 
         ImGui.Separator();
 
+        ImGui.TextDisabled("Combat");
         if (plugin.Tracker.IsActive && ImGui.MenuItem("Terminer le combat"))
             plugin.Tracker.EndCurrent(DateTime.UtcNow);
 
@@ -467,22 +473,15 @@ public sealed class HudWindow : Window, IDisposable
 
         ImGui.Separator();
 
-        foreach (var metric in Enum.GetValues<MeterMetric>())
-        {
-            var label = Cfg.HudMetric == metric ? $"> {Formatting.MetricLabel(metric)}" : Formatting.MetricLabel(metric);
-            if (ImGui.MenuItem(label))
-                Toggle(c => c.HudMetric = metric);
-        }
-
-        ImGui.Separator();
-
-        if (ImGui.MenuItem(Cfg.HudLocked ? "Déverrouiller la position" : "Verrouiller la position"))
+        ImGui.TextDisabled("HUD");
+        if (ImGui.MenuItem("Position verrouillée", Cfg.HudLocked))
             Toggle(c => c.HudLocked = !c.HudLocked);
 
-        ImGui.Separator();
-
-        if (ImGui.MenuItem("Masquer le HUD (/dps pour le réafficher)"))
+        if (ImGui.MenuItem("Masquer le HUD", "/dps"))
             plugin.ToggleHud();
+
+        if (ImGui.MenuItem("Réglages", "/dps config"))
+            plugin.ToggleConfigUi();
 
         ImGui.EndPopup();
     }
