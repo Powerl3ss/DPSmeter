@@ -20,7 +20,7 @@ public sealed partial class ConfigWindow
     private string filterCharacter = string.Empty;
     private string filterJob = string.Empty;
     private string filterOutcome = string.Empty;
-    private string? scrollToRun;
+    private bool filterRecordsOnly;
     private EncounterSort historySort = EncounterSort.Newest;
 
     private List<EncounterRun> historyList = new();
@@ -39,11 +39,15 @@ public sealed partial class ConfigWindow
     private string? expandedRun;
     private string? expandedAttempt;
 
+    // Ton meilleur DPS par adversaire ou instance, job et personnage.
+    private List<PersonalBest> personalBests = new();
+    private HashSet<string> bestRecordIds = new();
+    private int bestsVersion = -1;
+
     private void DrawHistoryPage()
     {
         var store = plugin.Store;
         RefreshHistoryList();
-        RefreshBests();
 
         Hero("Historique", "Tes combats enregistrés, conservés d'une session à l'autre.",
              historyRunCount > 0 ? $"{historyRunCount} entrée(s)" : null);
@@ -138,6 +142,27 @@ public sealed partial class ConfigWindow
         }
     }
 
+    private void RefreshBests()
+    {
+        var version = plugin.Store.Version;
+        if (version == bestsVersion)
+            return;
+
+        bestsVersion = version;
+        personalBests = PersonalBests.Compute(plugin.Store.All());
+        bestRecordIds = personalBests.Select(b => b.BestRecordId).ToHashSet();
+    }
+
+    /// <summary>Ton record sur le combat affiché, pour le comparer à ton DPS sur la page d'accueil.</summary>
+    private PersonalBest? BestFor(EncounterView view)
+    {
+        if (view.Local is not { } local)
+            return null;
+
+        RefreshBests();
+        return personalBests.FirstOrDefault(b => b.Title == view.Title && b.Place == view.ZoneName && b.JobId == local.JobId && b.CharacterName == local.Name);
+    }
+
     /// <summary>Recalcule la liste seulement si les combats ou les filtres ont changé.</summary>
     private void RefreshHistoryList()
     {
@@ -147,6 +172,7 @@ public sealed partial class ConfigWindow
 
         historyVersion = version;
         historyDirty = false;
+        RefreshBests();
 
         var all = plugin.Store.All();
         var runs = EncounterQuery.Group(all);
@@ -183,7 +209,9 @@ public sealed partial class ConfigWindow
             filterCategory, filterPlace, filterCharacter,
             jobIds.GetValueOrDefault(filterJob),
             Enum.GetValues<Outcome>().Where(o => o != Outcome.Unknown && Formatting.OutcomeLabel(o) == filterOutcome).Select(o => (Outcome?)o).FirstOrDefault());
-        historyList = EncounterQuery.Sort(runs.Where(filter.Matches), historySort);
+        historyList = EncounterQuery.Sort(
+            runs.Where(r => filter.Matches(r) && (!filterRecordsOnly || r.Attempts.Any(a => bestRecordIds.Contains(a.Id)))),
+            historySort);
 
         // La sélection et le détail ouvert ne survivent pas à la disparition de leur entrée.
         var ids = runs.Select(r => r.Id).ToHashSet();
@@ -254,6 +282,16 @@ public sealed partial class ConfigWindow
 
             NextCell();
             DrawSortCombo(width);
+
+            ImGui.SetCursorPos(new Vector2(start.X, start.Y + (float)((cell + Columns - 1) / Columns) * rowHeight));
+            ToggleRow("Records uniquement",
+                      $"Seulement les entrées contenant ton meilleur DPS, par adversaire ou instance, job et personnage. Comptent les combats d'au moins {PersonalBests.MinDurationSeconds:0} secondes qui ne sont pas des échecs.",
+                      filterRecordsOnly,
+                      v =>
+                      {
+                          filterRecordsOnly = v;
+                          OnFiltersChanged();
+                      });
         });
     }
 
@@ -375,12 +413,6 @@ public sealed partial class ConfigWindow
         var pad = 12f * S;
         var checkZone = pad + FrameH + 8f * S;
         var trashZone = FrameH + pad + 8f * S;
-
-        if (scrollToRun == run.Id)
-        {
-            ImGui.SetScrollHereY(0.1f);
-            scrollToRun = null;
-        }
 
         var startLocal = ImGui.GetCursorPos();
         var min = ImGui.GetCursorScreenPos();

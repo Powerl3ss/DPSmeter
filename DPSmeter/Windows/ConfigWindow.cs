@@ -18,13 +18,12 @@ namespace DPSmeter.Windows;
 /// <summary>Fenêtre de réglages : en-tête, barre de navigation à gauche, pages, statut en bas.</summary>
 public sealed partial class ConfigWindow : Window, IDisposable
 {
-    private enum Page { Home, History, Records, Display, Measure, About }
+    private enum Page { Home, History, Display, Measure, About }
 
     private static readonly (Page Page, FontAwesomeIcon Icon, string Label)[] Pages =
     {
         (Page.Home, FontAwesomeIcon.Home, "Accueil"),
         (Page.History, FontAwesomeIcon.History, "Historique"),
-        (Page.Records, FontAwesomeIcon.Trophy, "Records"),
         (Page.Display, FontAwesomeIcon.Palette, "Affichage"),
         (Page.Measure, FontAwesomeIcon.Crosshairs, "Mesure"),
         (Page.About, FontAwesomeIcon.InfoCircle, "À propos"),
@@ -386,7 +385,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
         {
             case Page.Home: DrawHomePage(); break;
             case Page.History: DrawHistoryPage(); break;
-            case Page.Records: DrawRecordsPage(); break;
             case Page.Display: DrawDisplayPage(); break;
             case Page.Measure: DrawMeasurePage(); break;
             case Page.About: DrawAboutPage(); break;
