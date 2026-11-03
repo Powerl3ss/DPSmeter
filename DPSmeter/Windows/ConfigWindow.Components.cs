@@ -89,13 +89,31 @@ public sealed partial class ConfigWindow
 
     // ------------------------------------------------------------------ Dessin de base
 
-    private static void DrawIconCentered(FontAwesomeIcon icon, Vector2 min, Vector2 max, Vector4 color)
+    /// <summary>
+    /// Centre le dessin réel de l'icône : la boîte d'un caractère de police n'est pas centrée sur son dessin,
+    /// ce qui décalait les icônes de un ou deux pixels dans leur bouton.
+    /// </summary>
+    private static unsafe void DrawIconCentered(FontAwesomeIcon icon, Vector2 min, Vector2 max, Vector4 color)
     {
         var text = icon.ToIconString();
         using (ImRaii.PushFont(UiBuilder.IconFont))
         {
-            var size = ImGui.CalcTextSize(text);
-            ImGui.GetWindowDrawList().AddText((min + max) / 2f - size / 2f, Col(color), text);
+            var center = (min + max) / 2f;
+            var font = ImGui.GetFont();
+            var glyph = font.FindGlyph((char)icon);
+
+            Vector2 pos;
+            if (glyph != null && font.FontSize > 0f)
+            {
+                var scale = ImGui.GetFontSize() / font.FontSize;
+                pos = center - new Vector2(glyph->X0 + glyph->X1, glyph->Y0 + glyph->Y1) * scale / 2f;
+            }
+            else
+            {
+                pos = center - ImGui.CalcTextSize(text) / 2f;
+            }
+
+            ImGui.GetWindowDrawList().AddText(new Vector2(MathF.Round(pos.X), MathF.Round(pos.Y)), Col(color), text);
         }
     }
 
