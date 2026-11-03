@@ -55,8 +55,10 @@ public sealed partial class ConfigWindow : Window, IDisposable
 
         // Vraies polices de grande taille (au lieu d'agrandir le texte, ce qui le rend flou).
         var atlas = Plugin.PluginInterface.UiBuilder.FontAtlas;
-        titleFont = atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(18f)));
-        heroFont = atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(25f)));
+        // La police par défaut est dessinée à des tailles fixes : toute autre taille est étirée et devient floue.
+        // 14 et 18 points (soit 18,67 et 24 pixels) sont des tailles exactes.
+        titleFont = atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(14f * 4f / 3f)));
+        heroFont = atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(24f)));
         numberFont = atlas.NewDelegateFontHandle(e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(32f)));
     }
 
