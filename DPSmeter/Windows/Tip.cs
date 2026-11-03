@@ -38,13 +38,15 @@ public static class Tip
     // ------------------------------------------------------------------ Ouverture
 
     /// <summary>Ouvre une infobulle stylée ; tout ce qui est dessiné jusqu'au Dispose s'y affiche.</summary>
-    public static IDisposable Begin()
+    public static IDisposable Begin() => Begin(1f);
+
+    private static IDisposable Begin(float alpha)
     {
         var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Padding)
                           .Push(ImGuiStyleVar.WindowRounding, 8f * S)
                           .Push(ImGuiStyleVar.WindowBorderSize, 1f)
                           .Push(ImGuiStyleVar.ItemSpacing, Spacing)
-                          .Push(ImGuiStyleVar.Alpha, 1f);
+                          .Push(ImGuiStyleVar.Alpha, alpha);
         var colors = ImRaii.PushColor(ImGuiCol.PopupBg, Background)
                            .Push(ImGuiCol.Border, Accent with { W = 0.45f })
                            .Push(ImGuiCol.Separator, new Vector4(1f, 1f, 1f, 0.10f))
@@ -54,30 +56,61 @@ public static class Tip
         return new Scope(style, colors);
     }
 
-    // Taille de la dernière infobulle ancrée, pour la garder entière à l'écran.
+    // Infobulle ancrée : sa taille mesurée, l'élément sur lequel elle est posée,
+    // et l'image où elle est apparue (elle reste invisible le temps d'être mesurée).
     private static Vector2 lastAnchoredSize;
+    private static Vector2 lastAnchor = new(float.NaN);
+    private static int lastAnchoredFrame = -10;
+    private static int anchoredSinceFrame;
 
     /// <summary>
     /// Infobulle centrée sur un élément (une case à cocher...) au lieu de suivre la souris :
     /// juste en dessous de lui, ou au-dessus s'il n'y a pas la place, sans sortir de l'écran.
+    /// Elle reste invisible deux images à son apparition, le temps que sa taille soit connue :
+    /// elle s'affiche ainsi directement à sa place, sans glisser.
     /// </summary>
     public static IDisposable BeginAnchored(Vector2 itemMin, Vector2 itemMax)
     {
+        var frame = ImGui.GetFrameCount();
+        // Un léger décalage (alignement à droite recalculé...) ne compte pas comme un autre élément.
+        var moved = float.IsNaN(lastAnchor.X) || Vector2.Distance(itemMin, lastAnchor) > 2f * S;
+        if (moved || frame - lastAnchoredFrame > 1)
+            anchoredSinceFrame = frame; // nouvel élément survolé, ou infobulle qui réapparaît
+        lastAnchor = itemMin;
+        lastAnchoredFrame = frame;
+        var measuring = frame - anchoredSinceFrame < 2;
+
         var viewport = ImGui.GetMainViewport();
         var screenMin = viewport.WorkPos;
         var screenMax = viewport.WorkPos + viewport.WorkSize;
         var gap = 6f * S;
         var size = lastAnchoredSize;
 
-        var x = (itemMin.X + itemMax.X) / 2f - size.X / 2f;
-        x = Math.Clamp(x, screenMin.X, MathF.Max(screenMin.X, screenMax.X - size.X));
+        // Centrée sur l'élément ; collée au bord de l'écran si elle en dépasserait.
+        var x = (itemMin.X + itemMax.X) / 2f;
+        var pivotX = 0.5f;
+        if (x + size.X / 2f > screenMax.X)
+        {
+            x = screenMax.X;
+            pivotX = 1f;
+        }
+        else if (x - size.X / 2f < screenMin.X)
+        {
+            x = screenMin.X;
+            pivotX = 0f;
+        }
 
-        var below = itemMax.Y + gap;
-        var y = below + size.Y <= screenMax.Y ? below : itemMin.Y - gap - size.Y;
-        y = MathF.Max(screenMin.Y, y);
+        // En dessous ; au-dessus s'il n'y a pas la place.
+        var y = itemMax.Y + gap;
+        var pivotY = 0f;
+        if (y + size.Y > screenMax.Y)
+        {
+            y = itemMin.Y - gap;
+            pivotY = 1f;
+        }
 
-        ImGui.SetNextWindowPos(new Vector2(MathF.Round(x), MathF.Round(y)), ImGuiCond.Always);
-        var scope = Begin();
+        ImGui.SetNextWindowPos(new Vector2(x, y), ImGuiCond.Always, new Vector2(pivotX, pivotY));
+        var scope = Begin(measuring ? 0f : 1f);
         lastAnchoredSize = ImGui.GetWindowSize();
         return scope;
     }
