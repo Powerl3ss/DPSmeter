@@ -54,6 +54,34 @@ public static class Tip
         return new Scope(style, colors);
     }
 
+    // Taille de la dernière infobulle ancrée, pour la garder entière à l'écran.
+    private static Vector2 lastAnchoredSize;
+
+    /// <summary>
+    /// Infobulle centrée sur un élément (une case à cocher...) au lieu de suivre la souris :
+    /// juste en dessous de lui, ou au-dessus s'il n'y a pas la place, sans sortir de l'écran.
+    /// </summary>
+    public static IDisposable BeginAnchored(Vector2 itemMin, Vector2 itemMax)
+    {
+        var viewport = ImGui.GetMainViewport();
+        var screenMin = viewport.WorkPos;
+        var screenMax = viewport.WorkPos + viewport.WorkSize;
+        var gap = 6f * S;
+        var size = lastAnchoredSize;
+
+        var x = (itemMin.X + itemMax.X) / 2f - size.X / 2f;
+        x = Math.Clamp(x, screenMin.X, MathF.Max(screenMin.X, screenMax.X - size.X));
+
+        var below = itemMax.Y + gap;
+        var y = below + size.Y <= screenMax.Y ? below : itemMin.Y - gap - size.Y;
+        y = MathF.Max(screenMin.Y, y);
+
+        ImGui.SetNextWindowPos(new Vector2(MathF.Round(x), MathF.Round(y)), ImGuiCond.Always);
+        var scope = Begin();
+        lastAnchoredSize = ImGui.GetWindowSize();
+        return scope;
+    }
+
     /// <summary>
     /// Même apparence pour une fenêtre surgissante (menu, liste de choix) : à pousser avant
     /// ImGui.BeginPopup et à retirer après ImGui.EndPopup.
