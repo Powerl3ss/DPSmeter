@@ -54,6 +54,32 @@ public static class Tip
         return new Scope(style, colors);
     }
 
+    /// <summary>
+    /// Même apparence pour une fenêtre surgissante (menu, liste de choix) : à pousser avant
+    /// ImGui.BeginPopup et à retirer après ImGui.EndPopup.
+    /// </summary>
+    public static IDisposable PushPopupStyle()
+    {
+        var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, new Vector2(6f, 6f) * S)
+                          .Push(ImGuiStyleVar.PopupRounding, 8f * S)
+                          .Push(ImGuiStyleVar.PopupBorderSize, 1f)
+                          .Push(ImGuiStyleVar.ItemSpacing, new Vector2(6f, 2f) * S);
+        var colors = ImRaii.PushColor(ImGuiCol.PopupBg, Background)
+                           .Push(ImGuiCol.Border, Accent with { W = 0.45f })
+                           .Push(ImGuiCol.Separator, new Vector4(1f, 1f, 1f, 0.10f))
+                           .Push(ImGuiCol.Text, Text);
+        return new PopupScope(style, colors);
+    }
+
+    private sealed class PopupScope(IDisposable style, IDisposable colors) : IDisposable
+    {
+        public void Dispose()
+        {
+            colors.Dispose();
+            style.Dispose();
+        }
+    }
+
     private sealed class Scope(IDisposable style, IDisposable colors) : IDisposable
     {
         private bool disposed;
