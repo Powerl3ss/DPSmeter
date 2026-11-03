@@ -225,6 +225,15 @@ public sealed partial class ConfigWindow : Window, IDisposable
         }
         var titleMin = ImGui.GetItemRectMin();
         var titleMax = ImGui.GetItemRectMax();
+
+        var loggedIn = Plugin.CurrentCharacterId != 0;
+        ImGui.SameLine(0, 12f * S);
+        ImGui.SetCursorPosY((headerH - FrameH) / 2f);
+        if (loggedIn)
+            Pill(plugin.LocalName, Success, dot: true, centerInFrame: true);
+        else
+            Pill("Hors ligne", TextDim, dot: true, centerInFrame: true);
+
         ImGui.SetWindowFontScale(0.95f); // soleil / lune un peu plus petits que le titre
 
         // Soleil la journée, lune le soir (heure réelle du PC), à la taille du titre
@@ -239,14 +248,6 @@ public sealed partial class ConfigWindow : Window, IDisposable
             ImGui.SetTooltip(IsDaytime ? "Journée (8h00 - 20h00)" : "Soirée (20h00 - 8h00)");
         DrawIconCentered(dayIcon, boxMin, boxMin + new Vector2(box, box), IsDaytime ? SunColor : MoonColor);
         ImGui.SetWindowFontScale(1f);
-
-        var loggedIn = Plugin.CurrentCharacterId != 0;
-        ImGui.SameLine(0, 12f * S);
-        ImGui.SetCursorPosY((headerH - FrameH) / 2f);
-        if (loggedIn)
-            Pill(plugin.LocalName, Success, dot: true, centerInFrame: true);
-        else
-            Pill("Hors ligne", TextDim, dot: true, centerInFrame: true);
 
         var buttonY = (headerH - FrameH) / 2f;
         ImGui.SetCursorPos(new Vector2(size.X - pad - FrameH, buttonY));
