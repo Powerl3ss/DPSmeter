@@ -70,7 +70,7 @@ public sealed class HudWindow : Window, IDisposable
     /// <summary>Décide si le HUD doit être dessiné cette frame.</summary>
     public override bool DrawConditions()
     {
-        if (InCutscene)
+        if (HiddenByGame)
             return false;
 
         if (plugin.PreviewMode)
@@ -85,10 +85,13 @@ public sealed class HudWindow : Window, IDisposable
         return !Cfg.HideOutOfCombat || plugin.RecentlyInCombat;
     }
 
-    private static bool InCutscene =>
+    /// <summary>Cinématique ou écran de chargement : le HUD n'a rien à faire à l'écran.</summary>
+    private static bool HiddenByGame =>
         Plugin.Condition[ConditionFlag.OccupiedInCutSceneEvent] ||
         Plugin.Condition[ConditionFlag.WatchingCutscene] ||
-        Plugin.Condition[ConditionFlag.WatchingCutscene78];
+        Plugin.Condition[ConditionFlag.WatchingCutscene78] ||
+        Plugin.Condition[ConditionFlag.BetweenAreas] ||
+        Plugin.Condition[ConditionFlag.BetweenAreas51];
 
     public override void PreDraw()
     {

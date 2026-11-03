@@ -189,6 +189,10 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnFrameworkUpdate(IFramework framework)
     {
+        // Écran de chargement : rien à recalculer, le HUD est caché et aucun coup n'arrive.
+        if (Condition[ConditionFlag.BetweenAreas] || Condition[ConditionFlag.BetweenAreas51])
+            return;
+
         var now = DateTime.UtcNow;
         if (now < nextViewRefresh)
             return;
