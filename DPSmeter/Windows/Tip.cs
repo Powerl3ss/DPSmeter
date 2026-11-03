@@ -266,6 +266,147 @@ public static class Tip
         ImGui.Dummy(new Vector2(width, h));
     }
 
+    // ------------------------------------------------------------------ Menus (clic droit)
+
+    // Largeur des lignes du menu ouvert : la plus grande mesurée à l'image précédente,
+    // pour que toutes les lignes (et leurs raccourcis à droite) soient alignées.
+    private static readonly Dictionary<string, float> MenuWidths = new();
+    private static string? menuId;
+    private static float menuNeeded;
+    private static IDisposable? menuStyle;
+
+    /// <summary>Ouvre un menu (clic droit) au style commun. À fermer avec EndMenu seulement s'il renvoie vrai.</summary>
+    public static bool BeginMenu(string id)
+    {
+        var style = PushPopupStyle();
+        if (!ImGui.BeginPopup(id))
+        {
+            style.Dispose();
+            return false;
+        }
+
+        menuStyle = style;
+        menuId = id;
+        menuNeeded = 0f;
+        ImGui.Dummy(new Vector2(0, 1f * S));
+        return true;
+    }
+
+    public static void EndMenu()
+    {
+        ImGui.Dummy(new Vector2(0, 1f * S));
+        if (menuId != null)
+            MenuWidths[menuId] = menuNeeded;
+        menuId = null;
+        ImGui.EndPopup();
+        menuStyle?.Dispose();
+        menuStyle = null;
+    }
+
+    private static float MenuWidth => MathF.Max(MenuWidths.TryGetValue(menuId ?? string.Empty, out var w) ? w : 0f, 190f * S);
+    private static float MenuRowHeight => MathF.Round(ImGui.GetTextLineHeight() + 9f * S);
+
+    /// <summary>En-tête du menu (nom de l'onglet, du joueur, de l'objet...) en couleur d'accent.</summary>
+    public static void MenuTitle(string text)
+    {
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 10f * S);
+        ImGui.TextColored(Accent, text);
+        menuNeeded = MathF.Max(menuNeeded, ImGui.CalcTextSize(text).X + 20f * S);
+        ImGui.Dummy(new Vector2(0, 1f * S));
+    }
+
+    /// <summary>Titre discret d'un groupe de lignes (« Tâches », « HUD »...).</summary>
+    public static void MenuSection(string text)
+    {
+        ImGui.Dummy(new Vector2(0, 1f * S));
+        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 10f * S);
+        ImGui.TextColored(Dim, text.ToUpperInvariant());
+        menuNeeded = MathF.Max(menuNeeded, ImGui.CalcTextSize(text.ToUpperInvariant()).X + 20f * S);
+    }
+
+    /// <summary>Séparation entre deux groupes du menu.</summary>
+    public static void MenuSeparator()
+    {
+        ImGui.Dummy(new Vector2(0, 1f * S));
+        ImGui.Separator();
+        ImGui.Dummy(new Vector2(0, 1f * S));
+    }
+
+    /// <summary>
+    /// Ligne de menu : icône, texte, puis à droite un raccourci, un interrupteur (option on/off)
+    /// ou une coche (choix parmi plusieurs). Le menu se ferme au clic ; renvoie vrai si on a cliqué.
+    /// </summary>
+    public static bool MenuItem(string label, FontAwesomeIcon icon, string? shortcut = null,
+                                bool? toggled = null, bool selected = false, bool danger = false)
+    {
+        var rowH = MenuRowHeight;
+        var labelW = ImGui.CalcTextSize(label).X;
+        var rightW = toggled.HasValue ? 26f * S : selected ? 14f * S : shortcut is { Length: > 0 } ? ImGui.CalcTextSize(shortcut).X : 0f;
+        menuNeeded = MathF.Max(menuNeeded, 30f * S + labelW + (rightW > 0 ? 24f * S + rightW : 0f) + 12f * S);
+
+        var width = MenuWidth;
+        var min = ImGui.GetCursorScreenPos();
+        var max = min + new Vector2(width, rowH);
+        var clicked = ImGui.InvisibleButton($"##menu{label}", new Vector2(width, rowH));
+        var hovered = ImGui.IsItemHovered();
+        var dl = ImGui.GetWindowDrawList();
+        var main = danger ? Bad : Text;
+
+        // Fond au survol : teinté de la couleur d'accent (ou de rouge pour une action destructrice).
+        if (hovered)
+            dl.AddRectFilled(min, max, ImGui.GetColorU32((danger ? Bad : Accent) with { W = 0.16f }), 6f * S);
+
+        var lineH = ImGui.GetTextLineHeight();
+        var centerY = min.Y + rowH / 2f;
+
+        // Icône dans une colonne fixe.
+        using (ImRaii.PushFont(UiBuilder.IconFont))
+        {
+            var glyph = icon.ToIconString();
+            var scale = 0.8f;
+            var size = ImGui.CalcTextSize(glyph) * scale;
+            var iconColor = danger ? Bad : hovered || selected || toggled == true ? Accent : Dim;
+            dl.AddText(ImGui.GetFont(), ImGui.GetFontSize() * scale,
+                       new Vector2(min.X + 14f * S - size.X / 2f, centerY - size.Y / 2f), ImGui.GetColorU32(iconColor), glyph);
+        }
+
+        dl.AddText(new Vector2(min.X + 30f * S, min.Y + (rowH - lineH) / 2f), ImGui.GetColorU32(main), label);
+
+        var right = max.X - 10f * S;
+        if (toggled is { } on)
+        {
+            // Petit interrupteur, comme dans les réglages.
+            var trackW = 24f * S;
+            var trackH = 13f * S;
+            var tMin = new Vector2(right - trackW, centerY - trackH / 2f);
+            var tMax = tMin + new Vector2(trackW, trackH);
+            dl.AddRectFilled(tMin, tMax, ImGui.GetColorU32(on ? Accent : new Vector4(1f, 1f, 1f, 0.14f)), trackH / 2f);
+            var knobR = trackH / 2f - 2f * S;
+            var knobX = on ? tMax.X - trackH / 2f : tMin.X + trackH / 2f;
+            dl.AddCircleFilled(new Vector2(knobX, centerY), knobR, ImGui.GetColorU32(on ? Background : Text with { W = 0.85f }), 16);
+        }
+        else if (selected)
+        {
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+            {
+                var glyph = FontAwesomeIcon.Check.ToIconString();
+                var scale = 0.8f;
+                var size = ImGui.CalcTextSize(glyph) * scale;
+                dl.AddText(ImGui.GetFont(), ImGui.GetFontSize() * scale,
+                           new Vector2(right - size.X, centerY - size.Y / 2f), ImGui.GetColorU32(Accent), glyph);
+            }
+        }
+        else if (shortcut is { Length: > 0 })
+        {
+            var size = ImGui.CalcTextSize(shortcut);
+            dl.AddText(new Vector2(right - size.X, min.Y + (rowH - lineH) / 2f), ImGui.GetColorU32(Dim), shortcut);
+        }
+
+        if (clicked)
+            ImGui.CloseCurrentPopup();
+        return clicked;
+    }
+
     /// <summary>Séparateur discret entre deux parties de l'infobulle.</summary>
     public static void Separator()
     {

@@ -462,39 +462,39 @@ public sealed class HudWindow : Window, IDisposable
         if (ImGui.IsWindowHovered() && ImGui.IsMouseReleased(ImGuiMouseButton.Right))
             ImGui.OpenPopup(menuId);
 
-        if (!ImGui.BeginPopup(menuId))
+        if (!Tip.BeginMenu(menuId))
             return;
 
         // Ce qu'on change le plus souvent d'abord : la mesure, puis le combat, puis le HUD lui-même.
-        ImGui.TextDisabled("Afficher");
+        Tip.MenuSection("Afficher");
         foreach (var metric in Enum.GetValues<MeterMetric>())
         {
-            if (ImGui.MenuItem(Formatting.MetricLabel(metric), Cfg.HudMetric == metric))
+            if (Tip.MenuItem(Formatting.MetricLabel(metric), FontAwesomeIcon.ChartBar, selected: Cfg.HudMetric == metric))
                 Toggle(c => c.HudMetric = metric);
         }
 
-        ImGui.Separator();
+        Tip.MenuSeparator();
 
-        ImGui.TextDisabled("Combat");
-        if (plugin.Tracker.IsActive && ImGui.MenuItem("Terminer le combat"))
+        Tip.MenuSection("Combat");
+        if (plugin.Tracker.IsActive && Tip.MenuItem("Terminer le combat", FontAwesomeIcon.FlagCheckered))
             plugin.Tracker.EndCurrent(DateTime.UtcNow);
 
-        if (ImGui.MenuItem("Remettre à zéro"))
+        if (Tip.MenuItem("Remettre à zéro", FontAwesomeIcon.Undo, danger: true))
             plugin.ClearAll();
 
-        ImGui.Separator();
+        Tip.MenuSeparator();
 
-        ImGui.TextDisabled("HUD");
-        if (ImGui.MenuItem("Position verrouillée", Cfg.HudLocked))
+        Tip.MenuSection("HUD");
+        if (Tip.MenuItem("Position verrouillée", FontAwesomeIcon.Lock, toggled: Cfg.HudLocked))
             Toggle(c => c.HudLocked = !c.HudLocked);
 
-        if (ImGui.MenuItem("Masquer le HUD", "/dps"))
+        if (Tip.MenuItem("Masquer le HUD", FontAwesomeIcon.EyeSlash, "/dps"))
             plugin.ToggleHud();
 
-        if (ImGui.MenuItem("Réglages", "/dps config"))
+        if (Tip.MenuItem("Réglages", FontAwesomeIcon.Cog, "/dps config"))
             plugin.ToggleConfigUi();
 
-        ImGui.EndPopup();
+        Tip.EndMenu();
     }
 
     private void Toggle(Action<Configuration> change)
