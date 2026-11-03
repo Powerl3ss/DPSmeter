@@ -131,6 +131,67 @@ public sealed class EncounterStore : IDisposable
 
     public void LoadInBackground() => Enqueue("Chargement des combats", Load);
 
+    /// <summary>
+    /// Garde au plus <paramref name="maxRecords"/> combats : les entrées les plus anciennes partent en premier,
+    /// entières (avec tous leurs wipes). Les entrées épinglées et celles qui contiennent un record personnel
+    /// ne sont jamais supprimées. Tout se fait dans la file d'arrière-plan, après le chargement.
+    /// </summary>
+    public void PruneInBackground(int maxRecords, IReadOnlyCollection<string> pinnedRuns)
+    {
+        if (maxRecords <= 0)
+            return;
+
+        var pinned = new HashSet<string>(pinnedRuns);
+        Enqueue("Nettoyage de l'historique", () =>
+        {
+            EncounterRecord[] all;
+            lock (gate)
+            {
+                if (records.Count <= maxRecords)
+                    return;
+                all = records.Values.ToArray();
+            }
+
+            var bests = PersonalBests.Compute(all).Select(b => b.BestRecordId).ToHashSet();
+            var runs = EncounterQuery.Group(all)
+                                     .Where(r => !pinned.Contains(r.Id) && !r.Attempts.Any(a => bests.Contains(a.Id)))
+                                     .OrderBy(r => r.StartUtc)
+                                     .ToList();
+
+            var excess = all.Length - maxRecords;
+            var removed = new List<string>();
+            foreach (var run in runs)
+            {
+                if (excess <= 0)
+                    break;
+                removed.AddRange(run.Attempts.Select(a => a.Id));
+                excess -= run.Attempts.Count;
+            }
+
+            if (removed.Count == 0)
+                return;
+
+            lock (gate)
+            {
+                foreach (var id in removed)
+                    records.Remove(id);
+                version++;
+            }
+
+            foreach (var id in removed)
+            {
+                try
+                {
+                    File.Delete(PathOf(id));
+                }
+                catch (Exception ex)
+                {
+                    onError?.Invoke(ex, $"Suppression de l'ancien combat {id}");
+                }
+            }
+        });
+    }
+
     public void Add(EncounterRecord record)
     {
         lock (gate)

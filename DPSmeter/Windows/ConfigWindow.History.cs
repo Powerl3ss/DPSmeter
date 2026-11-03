@@ -412,7 +412,8 @@ public sealed partial class ConfigWindow
         var height = lineH * 2 + 26f * S;
         var pad = 12f * S;
         var checkZone = pad + FrameH + 8f * S;
-        var trashZone = FrameH + pad + 8f * S;
+        var trashZone = FrameH * 2 + 6f * S + pad + 8f * S; // épingle + corbeille
+        var isPinned = Cfg.PinnedRuns.Contains(run.Id);
 
         var startLocal = ImGui.GetCursorPos();
         var min = ImGui.GetCursorScreenPos();
@@ -465,6 +466,15 @@ public sealed partial class ConfigWindow
                 titleX += ImGui.CalcTextSize(trophy).X + 6f * S;
             }
         }
+        if (isPinned)
+        {
+            var pin = FontAwesomeIcon.Thumbtack.ToIconString();
+            using (ImRaii.PushFont(UiBuilder.IconFont))
+            {
+                drawList.AddText(new Vector2(titleX, top), Col(Accent), pin);
+                titleX += ImGui.CalcTextSize(pin).X + 6f * S;
+            }
+        }
         drawList.AddText(new Vector2(titleX, top), Col(TextMain), run.Title);
         drawList.PopClipRect();
 
@@ -493,6 +503,19 @@ public sealed partial class ConfigWindow
         drawList.PushClipRect(textMin, new Vector2(textMax.X - outcomeWidth - pad, textMax.Y), true);
         drawList.AddText(new Vector2(textMin.X, secondLine), Col(TextDim), details);
         drawList.PopClipRect();
+
+        // Épingle : l'entrée n'est jamais supprimée automatiquement.
+        ImGui.SetCursorPos(startLocal + new Vector2(pageWidth - pad - FrameH * 2 - 6f * S, (height - FrameH) / 2f));
+        if (IconButton("##pin", FontAwesomeIcon.Thumbtack,
+                       isPinned ? "Épinglée : jamais supprimée automatiquement\nClic : désépingler" : "Clic : épingler, pour la garder même au-delà de la limite de combats gardés",
+                       active: isPinned, hoverColor: Accent))
+        {
+            if (isPinned)
+                Cfg.PinnedRuns.Remove(run.Id);
+            else
+                Cfg.PinnedRuns.Add(run.Id);
+            SaveSoon();
+        }
 
         // Corbeille.
         ImGui.SetCursorPos(startLocal + new Vector2(pageWidth - pad - FrameH, (height - FrameH) / 2f));

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System;
 using System.Numerics;
 using Dalamud.Configuration;
@@ -52,6 +53,12 @@ public class Configuration : IPluginConfiguration
     public int EndDelaySeconds { get; set; } = 5;
     public bool SaveEncounters { get; set; } = true;
     public int MinSaveSeconds { get; set; } = 10;
+
+    /// <summary>Nombre de combats gardés sur le disque (0 = sans limite). Les plus anciens partent en premier.</summary>
+    public int MaxSavedEncounters { get; set; } = 1000;
+
+    /// <summary>Entrées de l'historique épinglées : jamais supprimées automatiquement.</summary>
+    public HashSet<string> PinnedRuns { get; set; } = new();
     public bool ChatSummary { get; set; } = false;
     public bool ChatRecords { get; set; } = true;
 

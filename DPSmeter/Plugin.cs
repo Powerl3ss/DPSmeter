@@ -100,6 +100,7 @@ public sealed class Plugin : IDalamudPlugin
             Path.Combine(PluginInterface.GetPluginConfigDirectory(), "encounters"),
             (ex, what) => Log.Error(ex, what));
         Store.LoadInBackground();
+        PruneHistory();
         UpdateZoneName(ClientState.TerritoryType);
         StartRun();
 
@@ -333,6 +334,7 @@ public sealed class Plugin : IDalamudPlugin
                 Print($"Nouveau record sur {record.View.Title} : {Formatting.Full(record.View.Local!.Dps)} DPS ({JobAbbreviation(record.View.Local!.JobId)}) !");
 
             Store.Add(record);
+            PruneHistory();
             lastSaved = (encounter, record);
         }
 
@@ -368,6 +370,9 @@ public sealed class Plugin : IDalamudPlugin
                 deadNow.Add(row.Id);
         }
     }
+
+    /// <summary>Supprime les plus anciens combats au-delà de la limite choisie (en arrière-plan).</summary>
+    public void PruneHistory() => Store.PruneInBackground(Configuration.MaxSavedEncounters, Configuration.PinnedRuns);
 
     public string JobAbbreviation(uint jobId)
     {

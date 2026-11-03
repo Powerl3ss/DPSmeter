@@ -107,14 +107,31 @@ public sealed partial class ConfigWindow : Window, IDisposable
         }
     }
 
+    // --- Enregistrement différé des réglages
+    private bool savePending;
+
+    /// <summary>Demande l'enregistrement des réglages : il est fait dès que plus rien n'est en cours de modification.</summary>
+    private void SaveSoon() => savePending = true;
+
+    private void FlushSave()
+    {
+        if (!savePending)
+            return;
+        savePending = false;
+        Cfg.Save();
+        plugin.PruneHistory(); // la limite de combats gardés a peut-être baissé
+    }
+
     public override void OnClose()
     {
+        FlushSave();
         // L'aperçu ne doit pas rester affiché une fois les réglages fermés.
         plugin.PreviewMode = false;
     }
 
     public void Dispose()
     {
+        FlushSave();
         titleFont.Dispose();
         heroFont.Dispose();
         numberFont.Dispose();
@@ -138,6 +155,11 @@ public sealed partial class ConfigWindow : Window, IDisposable
 
     public override void PostDraw()
     {
+        // Enregistré une fois le geste fini (curseur relâché, couleur choisie, texte validé),
+        // et non à chaque image pendant qu'on fait glisser un curseur.
+        if (savePending && !ImGui.IsAnyItemActive())
+            FlushSave();
+
         windowColors?.Dispose();
         windowColors = null;
         windowStyle?.Dispose();
@@ -591,7 +613,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
         }
 
         if (changed)
-            Cfg.Save();
+            SaveSoon();
     }
 
     // =================================================================== Mesure
@@ -625,9 +647,16 @@ public sealed partial class ConfigWindow : Window, IDisposable
         SectionTitle("Historique");
         Card(() =>
         {
-            changed |= ToggleRow("Enregistrer les combats", "Sur ton PC, sans limite de temps. Seule la page Historique les supprime.", Cfg.SaveEncounters, v => Cfg.SaveEncounters = v);
+            changed |= ToggleRow("Enregistrer les combats", "Sur ton PC. Supprime-les depuis la page Historique.", Cfg.SaveEncounters, v => Cfg.SaveEncounters = v);
             using (ImRaii.Disabled(!Cfg.SaveEncounters))
+            {
                 changed |= SliderIntRow("Durée minimale", "En secondes. Les combats plus courts ne sont pas enregistrés.", Cfg.MinSaveSeconds, 0, 120, v => Cfg.MinSaveSeconds = v);
+                changed |= SliderIntRow("Combats gardés",
+                    Cfg.MaxSavedEncounters <= 0
+                        ? "Sans limite : rien n'est supprimé automatiquement."
+                        : "Au-delà, les plus anciens sont supprimés. Tes records et les entrées épinglées sont toujours gardés. 0 = sans limite.",
+                    Cfg.MaxSavedEncounters, 0, 5000, v => Cfg.MaxSavedEncounters = v);
+            }
             changed |= ToggleRow("Résumé dans le chat", "Message en fin de combat. Il n'est visible que par toi.", Cfg.ChatSummary, v => Cfg.ChatSummary = v);
             changed |= ToggleRow("Annoncer les nouveaux records", "Message dans le chat quand tu bats ton record. Il n'est visible que par toi.", Cfg.ChatRecords, v => Cfg.ChatRecords = v);
         });
@@ -639,7 +668,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
         });
 
         if (changed)
-            Cfg.Save();
+            SaveSoon();
     }
 
     private bool ScopeCard(string id, FontAwesomeIcon icon, string title, string subtitle, MeterScope scope, float width)
