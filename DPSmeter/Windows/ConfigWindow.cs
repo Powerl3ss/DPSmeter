@@ -247,7 +247,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
         ImGui.SetCursorScreenPos(boxMin);
         ImGui.Dummy(new Vector2(box, box));
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(IsDaytime ? "Journée (8h00 - 20h00)" : "Soirée (20h00 - 8h00)");
+            Tip.Show(IsDaytime ? "Journée (8h00 - 20h00)" : "Soirée (20h00 - 8h00)");
         DrawIconCentered(dayIcon, boxMin, boxMin + new Vector2(box, box), IsDaytime ? SunColor : MoonColor);
         ImGui.SetWindowFontScale(1f);
 
@@ -309,7 +309,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
 
             DrawIconCentered(icon, min, max, active ? Accent : hovered ? TextMain : TextDim);
             if (hovered)
-                ImGui.SetTooltip(label);
+                Tip.Show(label);
         }
     }
 
@@ -465,7 +465,7 @@ public sealed partial class ConfigWindow : Window, IDisposable
             ImGui.GetIO().KeyCtrl)
             plugin.ClearAll();
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Ctrl + clic : remet le HUD à zéro. Les combats enregistrés sont conservés.");
+            Tip.Show("Ctrl + clic : remet le HUD à zéro. Les combats enregistrés sont conservés.");
     }
 
     private void StatCard(FontAwesomeIcon icon, string title, string value, string caption)

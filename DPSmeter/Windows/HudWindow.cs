@@ -165,7 +165,7 @@ public sealed class HudWindow : Window, IDisposable
         if (ImGui.IsItemClicked())
             Toggle(c => c.HudCollapsed = !c.HudCollapsed);
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip((Cfg.HudCollapsed ? "Clic pour déplier le HUD" : "Clic pour replier le HUD") + "\nClic droit : réglages et options");
+            Tip.Show((Cfg.HudCollapsed ? "Clic pour déplier le HUD" : "Clic pour replier le HUD") + "\nClic droit : réglages et options");
 
         // Durée et DPS toujours visibles : à zéro tant qu'aucun combat n'a eu lieu.
         var summary = view != null
@@ -183,11 +183,11 @@ public sealed class HudWindow : Window, IDisposable
                 var state = view.IsActive ? "En cours" : outcome.Length > 0 ? outcome : "Terminé";
                 var healing = view.TotalHealing > 0 ? $"\n{Formatting.Full(view.TotalHealing)} soins" : string.Empty;
                 var taken = view.TotalDamageTaken > 0 ? $"\n{Formatting.Full(view.TotalDamageTaken)} dégâts subis" : string.Empty;
-                ImGui.SetTooltip($"{view.Title}\n{state}  |  {Formatting.Duration(view.DurationSeconds)}\n{Formatting.Full(view.TotalDps)} DPS du groupe\n{Formatting.Full(view.TotalDamage)} dégâts{healing}{taken}");
+                Tip.Show($"{view.Title}\n{state}  |  {Formatting.Duration(view.DurationSeconds)}\n{Formatting.Full(view.TotalDps)} DPS du groupe\n{Formatting.Full(view.TotalDamage)} dégâts{healing}{taken}");
             }
             else
             {
-                ImGui.SetTooltip("En attente d'un combat");
+                Tip.Show("En attente d'un combat");
             }
         }
 
@@ -315,7 +315,7 @@ public sealed class HudWindow : Window, IDisposable
         drawList.PopClipRect();
 
         if (hovered)
-            ImGui.SetTooltip(Formatting.Tooltip(row, name, plugin.JobAbbreviation(row.JobId), view.DurationSeconds, Cfg.RecentWindowSeconds));
+            Tip.Show(Formatting.Tooltip(row, name, plugin.JobAbbreviation(row.JobId), view.DurationSeconds, Cfg.RecentWindowSeconds));
     }
 
     /// <summary>

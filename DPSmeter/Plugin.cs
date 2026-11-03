@@ -94,6 +94,8 @@ public sealed class Plugin : IDalamudPlugin
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
+        // Infobulles : même style dans les trois plugins, avec la couleur d'accent choisie.
+        DPSmeter.Windows.Tip.AccentProvider = () => Configuration.AccentColor;
         Store = new EncounterStore(
             Path.Combine(PluginInterface.GetPluginConfigDirectory(), "encounters"),
             (ex, what) => Log.Error(ex, what));

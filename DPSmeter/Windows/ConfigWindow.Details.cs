@@ -110,7 +110,7 @@ public sealed partial class ConfigWindow
                 if (hovered)
                 {
                     drawList.AddRectFilled(rowMin, rowMax, Col(HoverOverlay), 5f * S);
-                    ImGui.SetTooltip(Formatting.Tooltip(row, shown, job, view.DurationSeconds, Cfg.RecentWindowSeconds) + "\n\nClic : voir toutes ses actions");
+                    Tip.Show(Formatting.Tooltip(row, shown, job, view.DurationSeconds, Cfg.RecentWindowSeconds) + "\n\nClic : voir toutes ses actions");
                     if (ImGui.IsMouseClicked(ImGuiMouseButton.Left))
                         detailPlayerId = row.Id;
                 }
@@ -210,7 +210,7 @@ public sealed partial class ConfigWindow
             var hoveredIndex = Math.Clamp((int)MathF.Round((ImGui.GetMousePos().X - plotMin.X) / stepX), 0, points - 1);
             var hoverX = plotMin.X + hoveredIndex * stepX;
             drawList.AddLine(new Vector2(hoverX, plotMin.Y), new Vector2(hoverX, plotMax.Y), Col(TextDim));
-            ImGui.SetTooltip(ChartTooltip(view, rows, hoveredIndex));
+            Tip.Show(ChartTooltip(view, rows, hoveredIndex));
         });
     }
 

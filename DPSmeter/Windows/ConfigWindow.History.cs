@@ -372,7 +372,7 @@ public sealed partial class ConfigWindow
                 selectedRuns.UnionWith(historyList.Select(r => r.Id));
         }
         if (historyList.Count > 0 && ImGui.IsItemHovered())
-            ImGui.SetTooltip("Sélectionne les entrées de la liste, filtres compris");
+            Tip.Show("Sélectionne les entrées de la liste, filtres compris");
 
         if (selectedRuns.Count > 0)
         {
@@ -384,7 +384,7 @@ public sealed partial class ConfigWindow
                 DeleteRecords(historyList.Where(r => selectedRuns.Contains(r.Id)).SelectMany(r => r.Attempts).Select(a => a.Id).ToArray());
             }
             if (ImGui.IsItemHovered())
-                ImGui.SetTooltip("Ctrl + clic : supprime définitivement les entrées sélectionnées, avec tous leurs wipes");
+                Tip.Show("Ctrl + clic : supprime définitivement les entrées sélectionnées, avec tous leurs wipes");
         }
 
         ImGui.Dummy(new Vector2(0, 2f * S));
@@ -436,7 +436,7 @@ public sealed partial class ConfigWindow
                 selectedRuns.Add(run.Id);
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip(isSelected ? "Retirer de la sélection" : "Ajouter à la sélection");
+            Tip.Show(isSelected ? "Retirer de la sélection" : "Ajouter à la sélection");
 
         // Résumé : un clic ouvre ou ferme le détail.
         var bodyWidth = pageWidth - checkZone - trashZone;

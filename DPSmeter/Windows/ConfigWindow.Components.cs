@@ -443,7 +443,7 @@ public sealed partial class ConfigWindow
         DrawIconCentered(icon, min, min + size, color);
 
         if (tooltip != null && ImGui.IsItemHovered())
-            ImGui.SetTooltip(tooltip);
+            Tip.Show(tooltip);
         return clicked;
     }
 
