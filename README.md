@@ -22,7 +22,7 @@ Un HUD en jeu qui affiche en direct tes dégâts et ceux des membres de ton grou
 - Au survol : dégâts, taux de critiques et de coups directs, part des DoT, meilleures actions.
 - Durée du combat et DPS du groupe dans l'en-tête.
 - Largeur, taille du texte, opacité, couleurs, position verrouillable, clics traversants.
-- Masquage automatique hors combat ou hors instance.
+- Masquage automatique hors combat ou hors instance. Le HUD disparaît aussi pendant les cinématiques.
 - Aperçu avec de faux chiffres pour le placer sans se battre.
 - Clic droit : menu rapide.
 
