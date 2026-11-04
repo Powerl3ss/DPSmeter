@@ -466,9 +466,6 @@ public sealed class HudWindow : Window, IDisposable
             return;
 
         // Ce qu'on change le plus souvent d'abord : la mesure, puis le combat, puis le HUD lui-même.
-        Tip.MenuTitle("DPSmeter");
-        Tip.MenuSeparator();
-
         Tip.MenuSection("Afficher");
         foreach (var metric in Enum.GetValues<MeterMetric>())
         {

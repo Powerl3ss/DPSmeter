@@ -12,7 +12,7 @@ namespace DPSmeter.Windows;
 /// Infobulles au style commun à DailyToDo, DPSmeter et BetterChat : fond sombre arrondi,
 /// fin contour de la couleur d'accent, titre en couleur d'accent, lignes avec icône,
 /// aide des clics plus discrète en bas. Une infobulle de survol n'a jamais de barre de séparation.
-/// Un menu qui s'ouvre au clic en a une seule, entre son titre et le reste.
+/// Un menu qui s'ouvre au clic en a une seule, entre son titre et le reste, s'il a un titre.
 /// </summary>
 public static class Tip
 {
@@ -349,6 +349,7 @@ public static class Tip
         menuStyle = style;
         menuId = id;
         menuNeeded = 0f;
+        menuJustSeparated = true; // en haut du menu, un titre de groupe n'a pas besoin d'air en plus
         ImGui.Dummy(new Vector2(0, 1f * S));
         return true;
     }
@@ -386,7 +387,7 @@ public static class Tip
         menuNeeded = MathF.Max(menuNeeded, ImGui.CalcTextSize(text.ToUpperInvariant()).X + 20f * S);
     }
 
-    // Juste sous la séparation, un titre de groupe n'a pas besoin d'air en plus.
+    // Juste sous la séparation ou en haut du menu, un titre de groupe n'a pas besoin d'air en plus.
     private static bool menuJustSeparated;
 
     /// <summary>La séparation entre le titre du menu et le reste.</summary>
