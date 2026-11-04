@@ -177,32 +177,21 @@ public static class Tip
                 content.Add(line);
         }
 
-        // Pas de lignes vides en début ou en fin.
-        while (content.Count > 0 && content[0].Length == 0)
-            content.RemoveAt(0);
-        while (content.Count > 0 && content[^1].Length == 0)
-            content.RemoveAt(content.Count - 1);
+        // Pas de lignes vides : toutes les lignes sont séparées du même espace.
+        content.RemoveAll(l => l.Length == 0);
 
         using (Begin())
         {
             for (var i = 0; i < content.Count; i++)
             {
-                var line = content[i];
-                if (line.Length == 0)
-                    ImGui.Dummy(new Vector2(0, 2f * S));
-                else if (i == 0 && content.Count > 1)
-                    ImGui.TextColored(Accent, line);
+                if (i == 0 && content.Count > 1)
+                    ImGui.TextColored(Accent, content[i]);
                 else
-                    ImGui.TextUnformatted(line);
+                    ImGui.TextUnformatted(content[i]);
             }
 
-            if (hints.Count > 0)
-            {
-                if (content.Count > 0)
-                    ImGui.Dummy(new Vector2(0, 1f * S));
-                foreach (var hint in hints)
-                    Hint(hint);
-            }
+            foreach (var hint in hints)
+                Hint(hint);
         }
     }
 
@@ -237,18 +226,16 @@ public static class Tip
     public static void Line(FontAwesomeIcon icon, Vector4 iconColor, string text, string? detail = null, Vector4? color = null)
     {
         var lineH = ImGui.GetTextLineHeight();
-        var iconBox = lineH * 1.15f;
         var start = ImGui.GetCursorScreenPos();
         var glyph = icon.ToIconString();
 
-        // Icône centrée dans une colonne fixe, pour que tous les textes soient alignés.
-        ImGui.Dummy(new Vector2(iconBox, lineH));
+        // Colonne fixe : le dessin de chaque icône part du bord gauche, comme les titres, et tous les textes s'alignent.
+        ImGui.Dummy(new Vector2(MarkColumn, lineH));
         using (ImRaii.PushFont(UiBuilder.IconFont))
         {
             var size = ImGui.CalcTextSize(glyph);
             var scale = Math.Min(1f, lineH * 0.9f / Math.Max(size.Y, 1f));
-            var drawSize = size * scale;
-            var pos = start + new Vector2((iconBox - drawSize.X) / 2f, (lineH - drawSize.Y) / 2f);
+            var pos = start + new Vector2(-GlyphLeft(glyph[0], scale), (lineH - size.Y * scale) / 2f);
             ImGui.GetWindowDrawList().AddText(ImGui.GetFont(), ImGui.GetFontSize() * scale, pos, ImGui.GetColorU32(iconColor), glyph);
         }
 
@@ -263,6 +250,31 @@ public static class Tip
             ImGui.SameLine(0, 6f * S);
             ImGui.TextColored(Dim, detail);
         }
+    }
+
+    /// <summary>Ligne avec un point de couleur à la place de l'icône, dans la même colonne que les icônes.</summary>
+    public static void DotLine(Vector4 color, string text)
+    {
+        var lineH = ImGui.GetTextLineHeight();
+        var start = ImGui.GetCursorScreenPos();
+        var radius = 3.5f * S;
+
+        ImGui.Dummy(new Vector2(MarkColumn, lineH));
+        ImGui.GetWindowDrawList().AddCircleFilled(start + new Vector2(radius, lineH / 2f), radius, ImGui.GetColorU32(color));
+
+        ImGui.SameLine(0, 6f * S);
+        ImGui.TextColored(color, text);
+    }
+
+    // La colonne des icônes et des points : assez large pour la plus grande icône utilisée.
+    private static float MarkColumn => ImGui.GetTextLineHeight() * 1.15f;
+
+    /// <summary>Le vide à gauche du dessin d'une icône : le retirer aligne vraiment son bord sur celui du texte.</summary>
+    private static unsafe float GlyphLeft(char c, float scale)
+    {
+        var font = ImGui.GetFont();
+        var found = font.FindGlyph(c);
+        return found != null && font.FontSize > 0f ? found->X0 * ImGui.GetFontSize() / font.FontSize * scale : 0f;
     }
 
     /// <summary>Petite étiquette arrondie (« Fait », « 2/3 », « En cours »...).</summary>
