@@ -11,7 +11,8 @@ namespace DPSmeter.Windows;
 /// <summary>
 /// Infobulles au style commun à DailyToDo, DPSmeter et BetterChat : fond sombre arrondi,
 /// fin contour de la couleur d'accent, titre en couleur d'accent, lignes avec icône,
-/// aide des clics plus discrète en bas.
+/// aide des clics plus discrète en bas. Une infobulle de survol n'a jamais de barre de séparation.
+/// Un menu qui s'ouvre au clic en a une seule, entre son titre et le reste.
 /// </summary>
 public static class Tip
 {
@@ -49,7 +50,6 @@ public static class Tip
                           .Push(ImGuiStyleVar.Alpha, alpha);
         var colors = ImRaii.PushColor(ImGuiCol.PopupBg, Background)
                            .Push(ImGuiCol.Border, Accent with { W = 0.45f })
-                           .Push(ImGuiCol.Separator, new Vector4(1f, 1f, 1f, 0.10f))
                            .Push(ImGuiCol.Text, Text);
         ImGui.BeginTooltip();
         ImGui.SetWindowFontScale(1f);
@@ -379,18 +379,23 @@ public static class Tip
     /// <summary>Titre discret d'un groupe de lignes (« Tâches », « HUD »...).</summary>
     public static void MenuSection(string text)
     {
-        ImGui.Dummy(new Vector2(0, 1f * S));
+        ImGui.Dummy(new Vector2(0, (menuJustSeparated ? 1f : 6f) * S));
+        menuJustSeparated = false;
         ImGui.SetCursorPosX(ImGui.GetCursorPosX() + 10f * S);
         ImGui.TextColored(Dim, text.ToUpperInvariant());
         menuNeeded = MathF.Max(menuNeeded, ImGui.CalcTextSize(text.ToUpperInvariant()).X + 20f * S);
     }
 
-    /// <summary>Séparation entre deux groupes du menu.</summary>
+    // Juste sous la séparation, un titre de groupe n'a pas besoin d'air en plus.
+    private static bool menuJustSeparated;
+
+    /// <summary>La séparation entre le titre du menu et le reste.</summary>
     public static void MenuSeparator()
     {
         ImGui.Dummy(new Vector2(0, 1f * S));
         ImGui.Separator();
         ImGui.Dummy(new Vector2(0, 1f * S));
+        menuJustSeparated = true;
     }
 
     /// <summary>
@@ -400,6 +405,7 @@ public static class Tip
     public static bool MenuItem(string label, FontAwesomeIcon icon, string? shortcut = null,
                                 bool? toggled = null, bool selected = false, bool danger = false)
     {
+        menuJustSeparated = false;
         var rowH = MenuRowHeight;
         var labelW = ImGui.CalcTextSize(label).X;
         var rightW = toggled.HasValue ? 26f * S : selected ? 14f * S : shortcut is { Length: > 0 } ? ImGui.CalcTextSize(shortcut).X : 0f;
@@ -468,11 +474,6 @@ public static class Tip
         return clicked;
     }
 
-    /// <summary>Séparateur discret entre deux parties de l'infobulle.</summary>
-    public static void Separator()
-    {
-        ImGui.Dummy(new Vector2(0, 1f * S));
-        ImGui.Separator();
-        ImGui.Dummy(new Vector2(0, 1f * S));
-    }
+    /// <summary>Un peu d'air entre deux parties d'une infobulle de survol, à la place d'une barre.</summary>
+    public static void Gap() => ImGui.Dummy(new Vector2(0, 3f * S));
 }

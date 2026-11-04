@@ -466,6 +466,9 @@ public sealed class HudWindow : Window, IDisposable
             return;
 
         // Ce qu'on change le plus souvent d'abord : la mesure, puis le combat, puis le HUD lui-même.
+        Tip.MenuTitle("DPSmeter");
+        Tip.MenuSeparator();
+
         Tip.MenuSection("Afficher");
         foreach (var metric in Enum.GetValues<MeterMetric>())
         {
@@ -473,16 +476,12 @@ public sealed class HudWindow : Window, IDisposable
                 Toggle(c => c.HudMetric = metric);
         }
 
-        Tip.MenuSeparator();
-
         Tip.MenuSection("Combat");
         if (plugin.Tracker.IsActive && Tip.MenuItem("Terminer le combat", FontAwesomeIcon.FlagCheckered))
             plugin.Tracker.EndCurrent(DateTime.UtcNow);
 
         if (Tip.MenuItem("Remettre à zéro", FontAwesomeIcon.Undo, danger: true))
             plugin.ClearAll();
-
-        Tip.MenuSeparator();
 
         Tip.MenuSection("HUD");
         if (Tip.MenuItem("Position verrouillée", FontAwesomeIcon.Lock, toggled: Cfg.HudLocked))
