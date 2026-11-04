@@ -116,3 +116,21 @@ jobs:
         git add repo.json
         git commit -m "Update repo.json for ${{ steps.version.outputs.tag }} [skip ci]"
         git push origin main
+
+    # Prévient le dépôt commun Powerl3ssPlugins pour que la nouvelle version y arrive tout de suite.
+    # Un échec ici n'annule pas la publication : le passage planifié du dépôt commun prendra le relais.
+    - name: Notify shared plugin repository
+      if: steps.version.outputs.release == 'true'
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ secrets.PLUGINS_REPO_TOKEN }}
+      run: |
+        if (-not $env:GH_TOKEN) {
+          Write-Host "::warning::Secret PLUGINS_REPO_TOKEN absent : le depot commun n'a pas ete prevenu."
+          exit 0
+        }
+        gh api repos/Powerl3ss/Powerl3ssPlugins/dispatches -f event_type=plugin-released
+        if ($LASTEXITCODE -ne 0) {
+          Write-Host "::warning::Le depot commun n'a pas pu etre prevenu (token expire ?)."
+        }
+        exit 0
