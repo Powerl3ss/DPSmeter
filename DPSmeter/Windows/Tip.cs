@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 
@@ -28,13 +29,46 @@ public static class Tip
     public static readonly Vector4 Bad = new(1.00f, 0.45f, 0.45f, 1f);
     private static readonly Vector4 Background = new(0.07f, 0.09f, 0.13f, 0.97f);
 
+    /// <summary>
+    /// Taille des infobulles par rapport au reste de l'interface : un peu plus petites, pour un rendu plus moderne.
+    /// Le texte, les marges, les espacements et l'arrondi suivent tous cette même proportion.
+    /// </summary>
+    public const float Scale = 0.92f;
+
     /// <summary>Marge intérieure de l'infobulle (à l'échelle de l'interface).</summary>
-    public static Vector2 Padding => new Vector2(12f, 10f) * ImGuiHelpers.GlobalScale;
+    public static Vector2 Padding => new Vector2(12f, 10f) * Scale * ImGuiHelpers.GlobalScale;
 
     /// <summary>Espacement entre les lignes de l'infobulle (à l'échelle de l'interface).</summary>
-    public static Vector2 Spacing => new Vector2(6f, 5f) * ImGuiHelpers.GlobalScale;
+    public static Vector2 Spacing => new Vector2(6f, 5f) * Scale * ImGuiHelpers.GlobalScale;
 
     private static float S => ImGuiHelpers.GlobalScale;
+
+    // Police des infobulles construite à sa vraie taille : réduire le texte avec SetWindowFontScale le rendrait flou.
+    // La taille est relative à celle choisie dans Dalamud, et la police est reconstruite si elle change.
+    private static IFontHandle? font;
+
+    private static IFontHandle Font => font ??= Plugin.PluginInterface.UiBuilder.FontAtlas.NewDelegateFontHandle(
+        e => e.OnPreBuild(tk => tk.AddDalamudDefaultFont(-Scale)));
+
+    /// <summary>Pousse la police des infobulles ; ne fait rien tant qu'elle n'est pas encore prête.</summary>
+    private static IDisposable? PushFont() => Font.Available ? Font.Push() : null;
+
+    /// <summary>Hauteur d'une ligne de texte d'infobulle, mesurable avant de l'ouvrir (pour la placer).</summary>
+    public static float TextLineHeight
+    {
+        get
+        {
+            using (PushFont())
+                return ImGui.GetTextLineHeight();
+        }
+    }
+
+    /// <summary>Libère la police des infobulles (à l'arrêt du plugin).</summary>
+    public static void Dispose()
+    {
+        font?.Dispose();
+        font = null;
+    }
 
     // ------------------------------------------------------------------ Ouverture
 
@@ -44,16 +78,17 @@ public static class Tip
     private static IDisposable Begin(float alpha)
     {
         var style = ImRaii.PushStyle(ImGuiStyleVar.WindowPadding, Padding)
-                          .Push(ImGuiStyleVar.WindowRounding, 8f * S)
+                          .Push(ImGuiStyleVar.WindowRounding, 8f * Scale * S)
                           .Push(ImGuiStyleVar.WindowBorderSize, 1f)
                           .Push(ImGuiStyleVar.ItemSpacing, Spacing)
                           .Push(ImGuiStyleVar.Alpha, alpha);
         var colors = ImRaii.PushColor(ImGuiCol.PopupBg, Background)
                            .Push(ImGuiCol.Border, Accent with { W = 0.45f })
                            .Push(ImGuiCol.Text, Text);
+        var fontScope = PushFont();
         ImGui.BeginTooltip();
         ImGui.SetWindowFontScale(1f);
-        return new Scope(style, colors);
+        return new Scope(style, colors, fontScope);
     }
 
     // Infobulle ancrée : sa taille mesurée, l'élément sur lequel elle est posée,
@@ -141,7 +176,7 @@ public static class Tip
         }
     }
 
-    private sealed class Scope(IDisposable style, IDisposable colors) : IDisposable
+    private sealed class Scope(IDisposable style, IDisposable colors, IDisposable? fontScope) : IDisposable
     {
         private bool disposed;
 
@@ -151,6 +186,7 @@ public static class Tip
                 return;
             disposed = true;
             ImGui.EndTooltip();
+            fontScope?.Dispose();
             colors.Dispose();
             style.Dispose();
         }
@@ -488,5 +524,5 @@ public static class Tip
     }
 
     /// <summary>Un peu d'air entre deux parties d'une infobulle de survol, à la place d'une barre.</summary>
-    public static void Gap() => ImGui.Dummy(new Vector2(0, 3f * S));
+    public static void Gap() => ImGui.Dummy(new Vector2(0, 3f * Scale * S));
 }
