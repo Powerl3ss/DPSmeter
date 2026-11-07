@@ -153,7 +153,6 @@ public sealed class Plugin : IDalamudPlugin
         WindowSystem.RemoveAllWindows();
         hudWindow.Dispose();
         configWindow.Dispose();
-        DPSmeter.Windows.Tip.Dispose();
 
         CommandManager.RemoveHandler(CommandName);
         CommandManager.RemoveHandler(LongCommandName);
